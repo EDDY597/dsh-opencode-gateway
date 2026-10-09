@@ -13,6 +13,7 @@
  */
 
 import z from '@deepseek-ai/schemastery'
+import type { Volatile } from '@deepseek-ai/cordis'
 import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -113,10 +114,24 @@ export interface FreeConfig {
   retryPolicy?: RetryPolicyConfig
 }
 
-/** Plugin configuration. */
+/** Plugin configuration. Volatile sections are live settings refs at runtime. */
 export interface Config {
-  gateway?: GatewayConfig
-  free?: FreeConfig
+  gateway?: Volatile<GatewayConfig> | GatewayConfig
+  free?: Volatile<FreeConfig> | FreeConfig
+}
+
+/**
+ * Read one config section through either shape it arrives in: a live
+ * `Volatile` ref (the loader hands volatile fields as refs, so a settings
+ * write reaches the running plugin) or a plain object (composition tests,
+ * and the pre-1.7 loader shape).
+ * @param section - the config field as handed to `apply`.
+ * @returns the section's current value, or undefined when unset.
+ */
+export function readSection<T extends object>(section: Volatile<T> | T | undefined): T | undefined {
+  if (section === undefined) return undefined
+  const ref = section as Volatile<T>
+  return typeof ref?.get === 'function' ? (ref.get() as unknown as T) : (section as T)
 }
 
 /** Fully resolved configuration for both routes. */
@@ -128,7 +143,7 @@ export interface ResolvedConfig {
     apiKeyEnv: string
     hiddenModels: string[]
     discoverModels: boolean
-    models: RouteModel[]
+    models: RouteModel[] | undefined
     defaultContextWindow: number
     defaultMaxTokens: number
     streamIdleTimeoutMs: number
@@ -150,7 +165,7 @@ export interface ResolvedConfig {
     requestTimeoutMs: number
     autoCleanupConversations: boolean
     useIsolatedHome: boolean
-    models: RouteModel[]
+    models: RouteModel[] | undefined
     discoverModels: boolean
     defaultContextWindow: number
     defaultMaxTokens: number
@@ -201,6 +216,13 @@ const DEFAULT_FREE = {
 // typing fights `exactOptionalPropertyTypes`; every structural constraint the
 // schema would express is enforced at runtime by `resolveRouteModels` and
 // `resolveConfig`, which the loader validates composition config through.
+//
+// Both sections are `.volatile()`: that is what makes the plugin's Config the
+// settings form (namespace = the loader entry id, `opencode-gateway`) and what
+// makes a user edit reach the running plugin without a remount. `models`
+// carries NO schema default on purpose — absent means "inherit" (composition
+// base, then the shipped menu), while a set empty array means the user took
+// the menu over and unchecked everything; those two states must stay distinct.
 const modelEntry: z<RouteModel> = z.object({
   id: z.string().required(),
   name: z.string(),
@@ -210,21 +232,21 @@ const modelEntry: z<RouteModel> = z.object({
   input: z.array(z.string()),
 }) as unknown as z<RouteModel>
 
-const gatewaySchema: z<GatewayConfig> = z.object({
+const gatewaySectionSchema: z<GatewayConfig> = z.object({
   provider: z.string().default(DEFAULT_GATEWAY.provider),
   displayName: z.string().default(DEFAULT_GATEWAY.displayName),
   baseURL: z.string().default(DEFAULT_GATEWAY.baseURL),
   apiKeyEnv: z.string().default(DEFAULT_GATEWAY.apiKeyEnv),
   hiddenModels: z.array(z.string()).default([...DEFAULT_GATEWAY.hiddenModels]),
   discoverModels: z.boolean().default(DEFAULT_GATEWAY.discoverModels),
-  models: z.array(modelEntry).default([]),
+  models: z.array(modelEntry),
   defaultContextWindow: z.number().default(DEFAULT_GATEWAY.defaultContextWindow),
   defaultMaxTokens: z.number().default(DEFAULT_GATEWAY.defaultMaxTokens),
   streamIdleTimeoutMs: z.number().default(DEFAULT_GATEWAY.streamIdleTimeoutMs),
   retryPolicy: RetryPolicySchema,
-}).default({}) as unknown as z<GatewayConfig>
+}).default({})
 
-const freeSchema: z<FreeConfig> = z.object({
+const freeSectionSchema: z<FreeConfig> = z.object({
   provider: z.string().default(DEFAULT_FREE.provider),
   displayName: z.string().default(DEFAULT_FREE.displayName),
   serverUrl: z.string().default(DEFAULT_FREE.serverUrl),
@@ -240,19 +262,19 @@ const freeSchema: z<FreeConfig> = z.object({
   requestTimeoutMs: z.number().default(DEFAULT_FREE.requestTimeoutMs),
   autoCleanupConversations: z.boolean().default(DEFAULT_FREE.autoCleanupConversations),
   useIsolatedHome: z.boolean().default(DEFAULT_FREE.useIsolatedHome),
-  models: z.array(modelEntry).default([]),
+  models: z.array(modelEntry),
   discoverModels: z.boolean().default(DEFAULT_FREE.discoverModels),
   defaultContextWindow: z.number().default(DEFAULT_FREE.defaultContextWindow),
   defaultMaxTokens: z.number().default(DEFAULT_FREE.defaultMaxTokens),
   streamIdleTimeoutMs: z.number().default(DEFAULT_FREE.streamIdleTimeoutMs),
   retryPolicy: RetryPolicySchema,
-}).default({}) as unknown as z<FreeConfig>
+}).default({})
 
-/** Runtime schema for {@link Config}. */
-export const Config: z<Config> = z.object({
-  gateway: gatewaySchema,
-  free: freeSchema,
-}).default({}) as unknown as z<Config>
+/** Runtime schema for {@link Config}; the volatile sections are the settings form. */
+export const Config = z.object({
+  gateway: gatewaySectionSchema.volatile(),
+  free: freeSectionSchema.volatile(),
+})
 
 function positiveInteger(value: number, label: string, max?: number): number {
   if (!Number.isInteger(value) || value <= 0 || (max !== undefined && value > max)) {
@@ -309,7 +331,13 @@ function resolveRouteModels(raw: RouteModel[] | undefined, label: string): Route
  * @param source - composition values to resolve.
  * @returns a detached configuration both routes build from.
  */
-export function resolveConfig(source: Config): ResolvedConfig {
+/** Plain (non-volatile) configuration input resolveConfig accepts. */
+export interface ConfigInput {
+  gateway?: GatewayConfig
+  free?: FreeConfig
+}
+
+export function resolveConfig(source: ConfigInput): ResolvedConfig {
   const gatewayRaw = source.gateway ?? {}
   const freeRaw = source.free ?? {}
   const gatewayProvider = gatewayRaw.provider ?? DEFAULT_GATEWAY.provider
@@ -342,7 +370,7 @@ export function resolveConfig(source: Config): ResolvedConfig {
       apiKeyEnv,
       hiddenModels,
       discoverModels: gatewayRaw.discoverModels ?? DEFAULT_GATEWAY.discoverModels,
-      models: resolveRouteModels(gatewayRaw.models, 'gateway.models'),
+      models: gatewayRaw.models === undefined ? undefined : resolveRouteModels(gatewayRaw.models, 'gateway.models'),
       defaultContextWindow: positiveInteger(gatewayRaw.defaultContextWindow ?? DEFAULT_GATEWAY.defaultContextWindow, 'gateway.defaultContextWindow'),
       defaultMaxTokens: positiveInteger(gatewayRaw.defaultMaxTokens ?? DEFAULT_GATEWAY.defaultMaxTokens, 'gateway.defaultMaxTokens'),
       streamIdleTimeoutMs: positiveInteger(gatewayRaw.streamIdleTimeoutMs ?? DEFAULT_GATEWAY.streamIdleTimeoutMs, 'gateway.streamIdleTimeoutMs', MAX_TIMER_DELAY_MS),
@@ -364,7 +392,7 @@ export function resolveConfig(source: Config): ResolvedConfig {
       requestTimeoutMs: positiveInteger(freeRaw.requestTimeoutMs ?? DEFAULT_FREE.requestTimeoutMs, 'free.requestTimeoutMs'),
       autoCleanupConversations: freeRaw.autoCleanupConversations ?? DEFAULT_FREE.autoCleanupConversations,
       useIsolatedHome: freeRaw.useIsolatedHome ?? DEFAULT_FREE.useIsolatedHome,
-      models: resolveRouteModels(freeRaw.models, 'free.models'),
+      models: freeRaw.models === undefined ? undefined : resolveRouteModels(freeRaw.models, 'free.models'),
       discoverModels: freeRaw.discoverModels ?? DEFAULT_FREE.discoverModels,
       defaultContextWindow: positiveInteger(freeRaw.defaultContextWindow ?? DEFAULT_FREE.defaultContextWindow, 'free.defaultContextWindow'),
       defaultMaxTokens: positiveInteger(freeRaw.defaultMaxTokens ?? DEFAULT_FREE.defaultMaxTokens, 'free.defaultMaxTokens'),

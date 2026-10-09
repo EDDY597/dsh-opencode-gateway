@@ -12,6 +12,7 @@
  * @module dsh-opencode-gateway/config
  */
 import z from '@deepseek-ai/schemastery';
+import type { Volatile } from '@deepseek-ai/cordis';
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm';
 /** One model entry in a route's models list. */
 export interface RouteModel {
@@ -106,11 +107,20 @@ export interface FreeConfig {
     /** Retries are the proxy's own job; keep this at zero. */
     retryPolicy?: RetryPolicyConfig;
 }
-/** Plugin configuration. */
+/** Plugin configuration. Volatile sections are live settings refs at runtime. */
 export interface Config {
-    gateway?: GatewayConfig;
-    free?: FreeConfig;
+    gateway?: Volatile<GatewayConfig> | GatewayConfig;
+    free?: Volatile<FreeConfig> | FreeConfig;
 }
+/**
+ * Read one config section through either shape it arrives in: a live
+ * `Volatile` ref (the loader hands volatile fields as refs, so a settings
+ * write reaches the running plugin) or a plain object (composition tests,
+ * and the pre-1.7 loader shape).
+ * @param section - the config field as handed to `apply`.
+ * @returns the section's current value, or undefined when unset.
+ */
+export declare function readSection<T extends object>(section: Volatile<T> | T | undefined): T | undefined;
 /** Fully resolved configuration for both routes. */
 export interface ResolvedConfig {
     gateway: {
@@ -120,7 +130,7 @@ export interface ResolvedConfig {
         apiKeyEnv: string;
         hiddenModels: string[];
         discoverModels: boolean;
-        models: RouteModel[];
+        models: RouteModel[] | undefined;
         defaultContextWindow: number;
         defaultMaxTokens: number;
         streamIdleTimeoutMs: number;
@@ -142,7 +152,7 @@ export interface ResolvedConfig {
         requestTimeoutMs: number;
         autoCleanupConversations: boolean;
         useIsolatedHome: boolean;
-        models: RouteModel[];
+        models: RouteModel[] | undefined;
         discoverModels: boolean;
         defaultContextWindow: number;
         defaultMaxTokens: number;
@@ -150,13 +160,24 @@ export interface ResolvedConfig {
         retryPolicy: ResolvedRetryPolicy;
     };
 }
-/** Runtime schema for {@link Config}. */
-export declare const Config: z<Config>;
+/** Runtime schema for {@link Config}; the volatile sections are the settings form. */
+export declare const Config: z<Schemastery.ObjectS<NoInfer<{
+    gateway: z<NoInfer<GatewayConfig>, NoInfer<GatewayConfig>, "volatile">;
+    free: z<NoInfer<FreeConfig>, NoInfer<FreeConfig>, "volatile">;
+}>>, Schemastery.ObjectT<NoInfer<{
+    gateway: z<NoInfer<GatewayConfig>, NoInfer<GatewayConfig>, "volatile">;
+    free: z<NoInfer<FreeConfig>, NoInfer<FreeConfig>, "volatile">;
+}>>, "plain">;
 /**
  * Resolve and validate deployment configuration once per plugin load.
  * @param source - composition values to resolve.
  * @returns a detached configuration both routes build from.
  */
-export declare function resolveConfig(source: Config): ResolvedConfig;
+/** Plain (non-volatile) configuration input resolveConfig accepts. */
+export interface ConfigInput {
+    gateway?: GatewayConfig;
+    free?: FreeConfig;
+}
+export declare function resolveConfig(source: ConfigInput): ResolvedConfig;
 /** Default settings used by an absent section and by composition examples. */
 export declare const DEFAULT_CONFIG: Config;

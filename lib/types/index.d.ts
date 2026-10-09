@@ -14,21 +14,23 @@
  *
  * Both routes mount immediately with configured/seed menus, then upgrade to
  * the live listing discovery reports; discovery failures stay soft. The
- * plugin installs no settings section — configuration lives in the
- * composition layer, and cordis restarts the plugin when it changes.
+ * plugin's Config IS the settings form (volatile sections): the settings
+ * page's model checkboxes write the `models` lists, and a write reaches the
+ * running plugin through the volatile refs without a remount.
  *
  * @module dsh-opencode-gateway
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai';
-import type { Config } from './config.ts';
-export { Config, DEFAULT_CONFIG } from './config.ts';
+import type { Config as ConfigShape } from './config.ts';
+export { Config, DEFAULT_CONFIG, readSection } from './config.ts';
 export type { GatewayConfig, FreeConfig, ResolvedConfig, RouteModel } from './config.ts';
 export { fetchGatewayListing } from './discovery.ts';
 export { emptyCredentialStore, minimalAuthContext, readLocalOpencodeKey, resolveCredential } from './credentials.ts';
-export { freeProfile, gatewayProfile, projectGatewayListing } from './routes.ts';
+export { enrichFromRegistry, freeProfile, gatewayProfile, projectGatewayListing } from './routes.ts';
 export { GO_REFUSED_MODEL_IDS, GO_REGISTRY, FREE_SEED, reasoningEffortsFor } from './registry.ts';
-/** Cordis plugin name; also the log and error-message prefix. */
+export { GATEWAY_DEFAULT_MODELS, FREE_DEFAULT_MODELS } from './default-models.ts';
+/** Cordis plugin name; also the log and error-message prefix, the discovery key, and the settings form namespace. */
 export declare const name = "opencode-gateway";
 /** Services required by this provider plugin. */
 export declare const inject: string[];
@@ -42,5 +44,5 @@ interface RouteState {
     menu: MenuModel[];
 }
 /** Install both routes on the LLM seam. */
-export declare function apply(ctx: Context, config: Config): void;
+export declare function apply(ctx: Context, config: ConfigShape): void;
 export type { MenuModel, RouteState };

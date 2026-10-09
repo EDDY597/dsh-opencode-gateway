@@ -22,6 +22,17 @@ import type { ResolvedConfig, RouteModel } from './config.ts';
  */
 export declare function projectGatewayListing(listingIds: readonly string[], gateway: ResolvedConfig['gateway']): RouteModel[];
 /**
+ * Fill a model entry's absent metadata from the measured registry: only
+ * fields the entry does not STATE are filled, so an explicit
+ * `reasoningEfforts: false` (a declared non-reasoning model) is never
+ * overridden. This is what keeps a settings-page-saved entry — which may
+ * carry nothing but an id — from losing the effort menu the registry
+ * measured for its bare id.
+ * @param entry - the model entry as configured or saved.
+ * @returns the entry with registry-known metadata filled in.
+ */
+export declare function enrichFromRegistry(entry: RouteModel): RouteModel;
+/**
  * The gateway route's profile. The menu is the explicit `models` list — or the
  * shipped ZCode-aligned list when none is set; the gateway's full live listing
  * only merges in when `discoverModels` is on.

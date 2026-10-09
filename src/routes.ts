@@ -105,6 +105,28 @@ function toPiModel(
   }
 }
 
+/**
+ * Fill a model entry's absent metadata from the measured registry: only
+ * fields the entry does not STATE are filled, so an explicit
+ * `reasoningEfforts: false` (a declared non-reasoning model) is never
+ * overridden. This is what keeps a settings-page-saved entry — which may
+ * carry nothing but an id — from losing the effort menu the registry
+ * measured for its bare id.
+ * @param entry - the model entry as configured or saved.
+ * @returns the entry with registry-known metadata filled in.
+ */
+export function enrichFromRegistry(entry: RouteModel): RouteModel {
+  const known = lookupEntry(bareModelId(entry.id))
+  if (known === undefined) return entry
+  return {
+    ...entry,
+    ...(entry.name !== undefined ? {} : { name: known.displayName }),
+    ...(entry.contextWindow !== undefined ? {} : { contextWindow: known.contextWindow }),
+    ...(entry.reasoningEfforts !== undefined ? {} : { reasoningEfforts: reasoningEffortsFor(known) }),
+    ...(entry.input !== undefined || known.vision !== true ? {} : { input: ['text', 'image'] as const }),
+  }
+}
+
 /** Materialize one route profile: a pi-ai provider plus the adapter's facts. */
 function buildProfile(
   provider: string,
@@ -116,6 +138,7 @@ function buildProfile(
   retryPolicy: ResolvedRetryPolicy,
   apiKeyEnv?: string,
 ): ResolvedPiAiProviderProfile {
+  const enriched = models.map(entry => enrichFromRegistry(entry))
   const piProvider = createProvider({
     id: provider,
     name: displayName,
@@ -129,7 +152,7 @@ function buildProfile(
         }),
       },
     },
-    models: models.map(entry => toPiModel(provider, baseURL, entry, defaults)),
+    models: enriched.map(entry => toPiModel(provider, baseURL, entry, defaults)),
     api: openAICompletionsApi(),
   })
   const configuredMaxTokens = new Map<string, number>(
@@ -160,7 +183,7 @@ function buildProfile(
  * @param listingIds - ids discovered from the gateway (possibly empty).
  */
 export function gatewayProfile(gateway: ResolvedConfig['gateway'], listingIds: readonly string[]): ResolvedPiAiProviderProfile {
-  const declared = gateway.models.length > 0 ? gateway.models : GATEWAY_DEFAULT_MODELS
+  const declared = gateway.models ?? GATEWAY_DEFAULT_MODELS
   const seen = new Set(declared.map(entry => entry.id))
   const extra = gateway.discoverModels
     ? projectGatewayListing(listingIds, gateway)
@@ -188,7 +211,7 @@ export function gatewayProfile(gateway: ResolvedConfig['gateway'], listingIds: r
  * @param liveIds - ids the inlined proxy reports, empty until its backend is healthy.
  */
 export function freeProfile(free: ResolvedConfig['free'], liveIds: readonly string[]): ResolvedPiAiProviderProfile {
-  const declared = free.models.length > 0 ? free.models : FREE_DEFAULT_MODELS
+  const declared = free.models ?? FREE_DEFAULT_MODELS
   const seen = new Set(declared.map(entry => entry.id))
   const extra = free.discoverModels
     ? liveIds

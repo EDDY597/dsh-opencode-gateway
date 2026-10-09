@@ -1,7 +1,7 @@
 {
   "name": "dsh-opencode-gateway",
-  "description": "OpenCode gateway provider for DeepSeek Harness: one route to the local opencode-api-plugin gateway, one route to an inlined opencode2api local proxy (Zen free tier), with a curated model registry",
-  "version": "0.1.0",
+  "description": "OpenCode gateway provider for DeepSeek Harness: one route to the local opencode-api-plugin gateway, one route to an inlined opencode2api local proxy (Zen free tier), with a curated model registry and a model-manager settings page",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -9,6 +9,10 @@
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
@@ -24,6 +28,14 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-remotes"
+      ],
+      "platform": "web"
     }
   },
   "scripts": {
@@ -34,17 +46,25 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/cordis-plugin-loader": ">=1.0.4 <2",
     "@deepseek-ai/dsh-attachment": ">=0.1.7-rc.2 <0.3.0-0",
     "@deepseek-ai/dsh-credentials": ">=0.1.7-rc.2 <0.3.0-0",
     "@deepseek-ai/dsh-launch-environment": ">=0.1.7-rc.2 <0.3.0-0",
     "@deepseek-ai/dsh-llm": ">=0.1.7-rc.2 <0.3.0-0",
     "@deepseek-ai/dsh-llm-pi-ai": ">=0.1.7-rc.2 <0.3.0-0",
     "@deepseek-ai/dsh-timeout": ">=0.1.7-rc.2 <0.3.0-0",
-    "@deepseek-ai/schemastery": "^3.18.4"
+    "@deepseek-ai/schemastery": "^3.18.4",
+    "react": "^18.2.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.5",
+    "@deepseek-ai/dsh-api-remotes": "0.2.0-rc.2",
     "@deepseek-ai/dsh-attachment": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.0-rc.2",
     "@deepseek-ai/dsh-credentials": "0.2.0-rc.2",
     "@deepseek-ai/dsh-launch-environment": "0.2.0-rc.2",
     "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
@@ -53,6 +73,8 @@
     "@deepseek-ai/schemastery": "^3.18.4",
     "@earendil-works/pi-ai": "0.87.1",
     "@types/node": "^22.20.0",
+    "@types/react": "~18.3.7",
+    "react": "^18.3.1",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"

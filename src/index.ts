@@ -14,20 +14,28 @@
  *
  * Both routes mount immediately with configured/seed menus, then upgrade to
  * the live listing discovery reports; discovery failures stay soft. The
- * plugin installs no settings section — configuration lives in the
- * composition layer, and cordis restarts the plugin when it changes.
+ * plugin's Config IS the settings form (volatile sections): the settings
+ * page's model checkboxes write the `models` lists, and a write reaches the
+ * running plugin through the volatile refs without a remount.
  *
  * @module dsh-opencode-gateway
  */
 
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
-import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm'
+import type {
+  AdapterRegistrationHandle,
+  DirectoryRegistrationHandle,
+  LlmConfigurableProvider,
+  LlmDiscoveredModel,
+  LlmModelDiscoveryRequest,
+} from '@deepseek-ai/dsh-llm'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
-import { DEFAULT_CONFIG, resolveConfig } from './config.ts'
-import type { Config } from './config.ts'
+import { resolveConfig, readSection } from './config.ts'
+import type { Config as ConfigShape, ResolvedConfig } from './config.ts'
 import { createLocalProxy, normalizeLocalProxyConfig } from './local/local-proxy.ts'
 import type { LocalProxy } from './local/local-proxy.ts'
 import { startLoopbackServer } from './local/loopback.ts'
@@ -40,15 +48,17 @@ import {
   resolveCredential,
 } from './credentials.ts'
 import { gatewayProfile, freeProfile } from './routes.ts'
+import { bareModelId, lookupEntry } from './registry.ts'
 
-export { Config, DEFAULT_CONFIG } from './config.ts'
+export { Config, DEFAULT_CONFIG, readSection } from './config.ts'
 export type { GatewayConfig, FreeConfig, ResolvedConfig, RouteModel } from './config.ts'
 export { fetchGatewayListing } from './discovery.ts'
 export { emptyCredentialStore, minimalAuthContext, readLocalOpencodeKey, resolveCredential } from './credentials.ts'
-export { freeProfile, gatewayProfile, projectGatewayListing } from './routes.ts'
+export { enrichFromRegistry, freeProfile, gatewayProfile, projectGatewayListing } from './routes.ts'
 export { GO_REFUSED_MODEL_IDS, GO_REGISTRY, FREE_SEED, reasoningEffortsFor } from './registry.ts'
+export { GATEWAY_DEFAULT_MODELS, FREE_DEFAULT_MODELS } from './default-models.ts'
 
-/** Cordis plugin name; also the log and error-message prefix. */
+/** Cordis plugin name; also the log and error-message prefix, the discovery key, and the settings form namespace. */
 export const name = 'opencode-gateway'
 /** Services required by this provider plugin. */
 export const inject = ['llm']
@@ -64,55 +74,100 @@ interface RouteState {
   menu: MenuModel[]
 }
 
+/** The free route's live runtime: the proxy, its loopback listener, readiness. */
+interface FreeRuntime {
+  free: ResolvedConfig['free']
+  proxy: LocalProxy
+  server?: LoopbackServer
+  serverReady: boolean
+}
+
 /** Install both routes on the LLM seam. */
-export function apply(ctx: Context, config: Config): void {
-  const resolved = resolveConfig(config ?? DEFAULT_CONFIG)
+export function apply(ctx: Context, config: ConfigShape): void {
+  // Sections arrive as live volatile refs when the loader composed them, so a
+  // settings-page edit reaches the very next profile build without a remount;
+  // plain objects (composition tests) read straight through.
+  const options = (): ResolvedConfig => resolveConfig({
+    gateway: readSection(config.gateway),
+    free: readSection(config.free),
+  })
+  options()
 
   // --- free route: inlined local proxy + loopback listener ----------------
+  // Structural free-route facts (endpoint, port, executable, prompt mode) are
+  // baked into the proxy and listener at construction; the settings page only
+  // edits the model menu, which rebuilds live. A structural edit therefore
+  // asks for a restart rather than pretending it applied.
   const assetsPath = fileURLToPath(new URL('../assets/opencode2api-tool-lock.js', import.meta.url))
-  const zenApiKey = process.env[resolved.free.zenApiKeyEnv] ?? readLocalOpencodeKey()
-  let proxy: LocalProxy | undefined
-  try {
-    proxy = createLocalProxy(normalizeLocalProxyConfig({
-      id: resolved.free.provider,
-      baseURL: resolved.free.serverUrl,
-      serverPassword: resolved.free.serverPassword,
-      opencodePath: resolved.free.opencodePath,
-      manageBackend: resolved.free.manageBackend,
-      zenApiKey: zenApiKey ?? '',
-      disableTools: resolved.free.disableTools,
-      internalAllowedTools: [...resolved.free.internalAllowedTools],
-      promptMode: resolved.free.promptMode,
-      omitSystemPrompt: resolved.free.omitSystemPrompt,
-      requestTimeoutMs: resolved.free.requestTimeoutMs,
-      autoCleanupConversations: resolved.free.autoCleanupConversations,
-      useIsolatedHome: resolved.free.useIsolatedHome,
-      toolLockPluginPath: assetsPath,
-    }))
-  } catch (error: any) {
-    ctx.logger?.error?.(`opencode-gateway: inlined local proxy failed to start: ${error?.message ?? error}`)
-  }
+  let freeRuntime: FreeRuntime | undefined
+  let freeStructuralFacts: string | undefined
 
-  let server: LoopbackServer | undefined
-  let serverReady = false
-  const serverPromise = proxy === undefined
-    ? Promise.resolve(undefined)
-    : startLoopbackServer({
-        port: resolved.free.proxyPort,
-        listModels: () => proxy?.listModels() ?? Promise.resolve([]),
-        handleChat: (body, stream) => proxy?.handleChat(body, stream) ?? Promise.resolve(new Response(null, { status: 503 })),
-        handleResponses: (body, stream) => proxy?.handleResponses(body, stream) ?? Promise.resolve(new Response(null, { status: 503 })),
+  const structuralFactsOf = (free: ResolvedConfig['free']): string => JSON.stringify({
+    serverUrl: free.serverUrl,
+    proxyPort: free.proxyPort,
+    opencodePath: free.opencodePath,
+    serverPassword: free.serverPassword,
+    manageBackend: free.manageBackend,
+    disableTools: free.disableTools,
+    internalAllowedTools: free.internalAllowedTools,
+    promptMode: free.promptMode,
+    omitSystemPrompt: free.omitSystemPrompt,
+    requestTimeoutMs: free.requestTimeoutMs,
+    autoCleanupConversations: free.autoCleanupConversations,
+    useIsolatedHome: free.useIsolatedHome,
+    zenApiKeyEnv: free.zenApiKeyEnv,
+  })
+
+  const buildFreeRuntime = (): void => {
+    const free = options().free
+    const facts = structuralFactsOf(free)
+    if (freeRuntime !== undefined) {
+      if (facts === freeStructuralFacts) return
+      ctx.logger?.warn?.('opencode-gateway: free-route backend facts changed in settings; restart the harness to apply them (the model menu applies live)')
+      freeStructuralFacts = facts
+      return
+    }
+    freeStructuralFacts = facts
+    try {
+      const zenApiKey = process.env[free.zenApiKeyEnv] ?? readLocalOpencodeKey()
+      const proxy = createLocalProxy(normalizeLocalProxyConfig({
+        id: free.provider,
+        baseURL: free.serverUrl,
+        serverPassword: free.serverPassword,
+        opencodePath: free.opencodePath,
+        manageBackend: free.manageBackend,
+        zenApiKey: zenApiKey ?? '',
+        disableTools: free.disableTools,
+        internalAllowedTools: [...free.internalAllowedTools],
+        promptMode: free.promptMode,
+        omitSystemPrompt: free.omitSystemPrompt,
+        requestTimeoutMs: free.requestTimeoutMs,
+        autoCleanupConversations: free.autoCleanupConversations,
+        useIsolatedHome: free.useIsolatedHome,
+        toolLockPluginPath: assetsPath,
+      }))
+      const runtime: FreeRuntime = { free, proxy, serverReady: false }
+      freeRuntime = runtime
+      void startLoopbackServer({
+        port: free.proxyPort,
+        listModels: () => runtime.proxy.listModels(),
+        handleChat: (body, stream) => runtime.proxy.handleChat(body, stream),
+        handleResponses: (body, stream) => runtime.proxy.handleResponses(body, stream),
       }).then((started) => {
-        server = started
-        serverReady = true
+        if (freeRuntime !== runtime) return
+        runtime.server = started
+        runtime.serverReady = true
         ensure()
-        return started
       }, (error) => {
         ctx.logger?.error?.(`opencode-gateway: free route unavailable, loopback listener failed: ${error?.message ?? error}`)
         ensure()
-        return undefined
       })
-  void serverPromise
+    } catch (error: any) {
+      ctx.logger?.error?.(`opencode-gateway: inlined local proxy failed to start: ${error?.message ?? error}`)
+      freeRuntime = undefined
+    }
+  }
+  buildFreeRuntime()
 
   // --- discovery facts ----------------------------------------------------
   let gatewayListing: string[] = []
@@ -120,14 +175,14 @@ export function apply(ctx: Context, config: Config): void {
   let version = 0
 
   const buildGatewayState = (): RouteState => {
-    const profile = gatewayProfile(resolved.gateway, gatewayListing)
+    const profile = gatewayProfile(options().gateway, gatewayListing)
     return {
       profile,
       menu: (profile.piProvider?.getModels?.() ?? []).map(model => ({ id: model.id, name: model.name })),
     }
   }
   const buildFreeState = (): RouteState => {
-    const profile = freeProfile(resolved.free, freeListing)
+    const profile = freeProfile(options().free, freeListing)
     return {
       profile,
       menu: (profile.piProvider?.getModels?.() ?? []).map(model => ({ id: model.id, name: model.name })),
@@ -140,10 +195,11 @@ export function apply(ctx: Context, config: Config): void {
 
   /** Memoized profiles; a change in discovery facts or server readiness rebuilds. */
   const profilesMap = (): Map<string, RouteState> => {
+    const serverReady = freeRuntime?.serverReady === true
     if (statesVersion === version && statesServerReady === serverReady) return states
     const next = new Map<string, RouteState>()
-    next.set(resolved.gateway.provider, buildGatewayState())
-    if (serverReady && proxy !== undefined) next.set(resolved.free.provider, buildFreeState())
+    next.set(options().gateway.provider, buildGatewayState())
+    if (serverReady) next.set(options().free.provider, buildFreeState())
     states = next
     statesVersion = version
     statesServerReady = serverReady
@@ -157,7 +213,7 @@ export function apply(ctx: Context, config: Config): void {
       return map
     },
     resolveApiKey: async (provider: string, profile: ResolvedPiAiProviderProfile): Promise<string | undefined> => {
-      if (provider === resolved.free.provider) return 'opencode-local'
+      if (provider === options().free.provider) return 'opencode-local'
       const ref = profile.apiKeyEnv
       if (ref === undefined) {
         throw new LlmError(`opencode-gateway: route "${provider}" names no credential reference`, 'MISSING_CREDENTIAL')
@@ -214,7 +270,7 @@ export function apply(ctx: Context, config: Config): void {
       provider: state.profile.provider,
       displayName: state.profile.displayName,
       settingsNs: name,
-      settingsPath: [],
+      settingsPath: [state.profile.provider === options().free.provider ? 'free' : 'gateway'],
       catalog: {
         routes: [],
         models: state.menu,
@@ -223,14 +279,39 @@ export function apply(ctx: Context, config: Config): void {
     }))
   }
 
+  // Settings-page edits land as volatile updates; the facts compare decides
+  // whether a re-registration is due.
+  ctx.on('loader/volatile-update', () => {
+    buildFreeRuntime()
+    version += 1
+    ensure()
+  })
+
+  // Model discovery for the settings page's refresh: one registration, routed
+  // by the request's provider. Every listing id is offered — the page's
+  // checkboxes, not this handler, decide what the menu carries.
+  ctx.llm.registerModelDiscovery(name, async (request: LlmModelDiscoveryRequest): Promise<readonly LlmDiscoveredModel[]> => {
+    const current = options()
+    if (request.provider === current.free.provider) {
+      const ids = freeRuntime?.serverReady === true
+        ? await freeRuntime.proxy.listModels().catch(() => [] as string[])
+        : []
+      return ids.map(id => discoveryRow(id, current.free.displayName))
+    }
+    const key = await resolveCredential(ctx, current.gateway.apiKeyEnv).catch(() => undefined)
+    const ids = await fetchGatewayListing(current.gateway.baseURL, key)
+    return ids.map(id => discoveryRow(id, current.gateway.displayName))
+  })
+
   // --- discovery refresh --------------------------------------------------
   const sleep = (ms: number): Promise<void> => new Promise(resolvePromise => setTimeout(resolvePromise, ms))
 
   const refreshOnce = async (): Promise<void> => {
-    const key = await resolveCredential(ctx, resolved.gateway.apiKeyEnv).catch(() => undefined)
-    const gatewayNext = await fetchGatewayListing(resolved.gateway.baseURL, key)
-    const freeNext = server !== undefined
-      ? await proxy?.listModels().catch(() => [] as string[]) ?? []
+    const current = options()
+    const key = await resolveCredential(ctx, current.gateway.apiKeyEnv).catch(() => undefined)
+    const gatewayNext = await fetchGatewayListing(current.gateway.baseURL, key)
+    const freeNext = freeRuntime?.serverReady === true
+      ? await freeRuntime.proxy.listModels().catch(() => [] as string[])
       : []
     const changed = !sameList(gatewayNext, gatewayListing) || !sameList(freeNext, freeListing)
     gatewayListing = gatewayNext
@@ -261,12 +342,28 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(function* () {
     yield () => {
       clearInterval(pollTimer)
-      void server?.close()
+      void freeRuntime?.server?.close()
       // killBackend only ends a backend this proxy spawned; one reused from
       // the gateway stays with the gateway.
-      proxy?.killBackend()
+      freeRuntime?.proxy.killBackend()
     }
   }, 'opencode-gateway disposal')
+}
+
+/**
+ * One listing id as the settings page renders it: registry-enriched facts,
+ * labeled `<group>/<bare id>` so the page rows, the menu and the composer
+ * chip all read the same way.
+ */
+function discoveryRow(id: string, groupLabel: string): LlmDiscoveredModel {
+  const bare = bareModelId(id)
+  const known = lookupEntry(bare)
+  return {
+    id,
+    name: `${groupLabel}/${bare}`,
+    ...(known?.contextWindow === undefined ? {} : { contextWindow: known.contextWindow }),
+    ...(known?.vision === true ? { inputModalities: ['text', 'image'] as const } : {}),
+  }
 }
 
 function sameList(next: readonly string[], previous: readonly string[]): boolean {
