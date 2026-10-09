@@ -161,7 +161,7 @@ export interface ResolvedConfig {
 
 const DEFAULT_GATEWAY = {
   provider: 'opencode-gateway',
-  displayName: 'OpenCode Gateway',
+  displayName: 'OpenCode Go',
   baseURL: 'http://127.0.0.1:8787/v1',
   apiKeyEnv: 'OPENCODE_GATEWAY_KEY',
   hiddenModels: ['free/'],
@@ -175,7 +175,7 @@ const DEFAULT_GATEWAY = {
 
 const DEFAULT_FREE = {
   provider: 'opencode-free',
-  displayName: 'OpenCode Local (free)',
+  displayName: 'OpenCode Free',
   serverUrl: 'http://127.0.0.1:10001',
   // 10102, not 10002: a running DeepSeek Harness host itself binds 10002.
   proxyPort: 10102,

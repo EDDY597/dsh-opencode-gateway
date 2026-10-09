@@ -60,7 +60,7 @@ The plugin installs no settings UI; configuration lives in the composition layer
   config:
     gateway:
       provider: opencode-gateway
-      displayName: OpenCode Gateway
+      displayName: OpenCode Go
       baseURL: http://127.0.0.1:8787/v1
       apiKeyEnv: OPENCODE_GATEWAY_KEY
       hiddenModels: ["free/"]

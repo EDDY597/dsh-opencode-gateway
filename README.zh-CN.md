@@ -60,7 +60,7 @@ pnpm dsh plugin --profile web add "D:/Agent/dsh-opencode-gateway"
   config:
     gateway:
       provider: opencode-gateway        # 路由名
-      displayName: OpenCode Gateway
+      displayName: OpenCode Go
       baseURL: http://127.0.0.1:8787/v1
       apiKeyEnv: OPENCODE_GATEWAY_KEY   # 凭据引用（存 ~/.dsh/.env）
       hiddenModels: ["free/"]           # 隐藏的 listing 前缀（免费档归内联路由）
