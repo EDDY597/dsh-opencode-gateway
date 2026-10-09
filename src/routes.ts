@@ -20,10 +20,8 @@ import type { ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { ResolvedConfig, RouteModel } from './config.ts'
 import { GATEWAY_DEFAULT_MODELS, FREE_DEFAULT_MODELS } from './default-models.ts'
 import {
-  GO_REGISTRY,
   GO_REFUSED_MODEL_IDS,
   GO_ROUTE_PREFIXES,
-  FREE_SEED,
   bareModelId,
   lookupEntry,
   prettifyId,
