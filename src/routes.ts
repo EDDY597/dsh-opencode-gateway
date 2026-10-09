@@ -163,7 +163,9 @@ export function gatewayProfile(gateway: ResolvedConfig['gateway'], listingIds: r
   const declared = gateway.models.length > 0 ? gateway.models : GATEWAY_DEFAULT_MODELS
   const seen = new Set(declared.map(entry => entry.id))
   const extra = gateway.discoverModels
-    ? projectGatewayListing(listingIds, gateway).filter(entry => !seen.has(entry.id))
+    ? projectGatewayListing(listingIds, gateway)
+        .filter(entry => !seen.has(entry.id))
+        .map(entry => ({ ...entry, name: `${gateway.displayName}/${bareModelId(entry.id)}` }))
     : []
   const models = [...declared, ...extra]
   return buildProfile(
@@ -191,10 +193,7 @@ export function freeProfile(free: ResolvedConfig['free'], liveIds: readonly stri
   const extra = free.discoverModels
     ? liveIds
         .filter(id => !seen.has(id))
-        .map(id => {
-          const bare = bareModelId(id)
-          return { id, name: prettifyId(bare) }
-        })
+        .map(id => ({ id, name: `${free.displayName}/${bareModelId(id)}` }))
     : []
   const models = [...declared, ...extra]
   return buildProfile(

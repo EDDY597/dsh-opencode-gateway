@@ -123,7 +123,7 @@ describe('route profiles', () => {
     const profile = freeProfile(resolved.free, [])
     const models = profile.piProvider?.getModels?.() ?? []
     expect(models.map(model => model.id)).toEqual(FREE_DEFAULT_MODELS.map(entry => entry.id))
-    expect(models[0]?.name).toBe('Big Pickle')
+    expect(models[0]?.name).toBe('OpenCode Free/big-pickle')
   })
 
   it('free profile: live listing merges only when discoverModels is on', () => {

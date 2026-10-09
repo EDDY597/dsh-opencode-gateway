@@ -5,9 +5,13 @@
  * subscription entries and seven Zen free-tier entries — enriched with the
  * measured OpenCode Go registry (windows, effort vocabularies, vision).
  *
- * The free route serves the same seven free models under the proxy's raw wire
- * ids (`opencode/<model>` — the gateway's `free/` spelling is its own display
- * rewrite and does not exist on the inlined proxy).
+ * Entry names read `<group displayName>/<bare model id>` (e.g.
+ * `OpenCode Go/deepseek-v4.1-flash`): that one string is what both the model
+ * menu rows and the composer's model chip render, per the user's request that
+ * the chip carry the group prefix. The free route serves the same seven free
+ * models under the proxy's raw wire ids (`opencode/<model>` — the gateway's
+ * `free/` spelling is its own display rewrite and does not exist on the
+ * inlined proxy).
  *
  * @module dsh-opencode-gateway/default-models
  */
