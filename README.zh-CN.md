@@ -7,16 +7,16 @@ DeepSeek Harness（DSH）插件：把本机 opencode 生态接进 DSH 的模型�
 | route | 端点 | 承载内容 |
 | --- | --- | --- |
 | `opencode-gateway` | `http://127.0.0.1:8787/v1`（本仓库网关） | 网关聚合的一切：OpenCode Go 订阅（读本地 opencode 登录态）、OpenCode Zen、以及 gateway.config.json 里的任意自定义上游 |
-| `opencode-free` | 插件进程内环回代理（默认 `http://127.0.0.1:10002/v1`） | 内联的 opencode2api 移植：驱动本机 `opencode serve` 后端访问 Zen 免费档，**不依赖网关进程** |
+| `opencode-free` | 插件进程内环回代理（默认 `http://127.0.0.1:10102/v1`） | 内联的 opencode2api 移植：驱动本机 `opencode serve` 后端访问 Zen 免费档，**不依赖网关进程** |
 
 按设计本插件**不带用量面板**；额度显示由网关的 `/api/usage` 与托盘承担。
 
 ## 功能
 
-- **OpenCode Go 精修名录**：41 个条目的展示名、上下文窗口、思考强度词表、视觉标记与拒用名单，逐模型实测值移植自 [AIMFllyYS/dsh-protocom-api](https://github.com/AIMFllyYS/dsh-protocom-api)（MIT）——包括 Go 用 `off` 拒 `none`、Grok/Muse 只认 `/responses`（网关侧已自动转换）这类实测坑。
+- **OpenCode Go 精修名录**：默认菜单对齐 ZCode 的 15 个模型；41 个条目的展示名、上下文窗口、思考强度词表、视觉标记与拒用名单实测值移植自 [AIMFllyYS/dsh-protocom-api](https://github.com/AIMFllyYS/dsh-protocom-api)（MIT）——包括 Go 用 `off` 拒 `none`、Grok/Muse 只认 `/responses`（网关侧已自动转换）这类实测坑。
 - **实时模型发现**（软失败）：两条路由先以配置/种子菜单挂载，端点 listing 回答后原地升级；发现失败静默保持现状，对话不中断。
 - **后端生命周期托管**：免费档后端不在时自动 spawn `opencode serve`（首次约 10~20 秒），插件卸载时只回收**自己 spawn 的**后端；复用自网关的后端留给网关。
-- **进程内环回桥**：pi-ai 传输需要真实 URL，插件把 LocalProxy 函数包成一个仅绑定回环地址的 HTTP 监听（默认 10002，可配）；环回服务永不驻留事件循环，headless 任务照常退出。
+- **进程内环回桥**：pi-ai 传输需要真实 URL，插件把 LocalProxy 函数包成一个仅绑定回环地址的 HTTP 监听（默认 10102，可配）；环回服务永不驻留事件循环，headless 任务照常退出。
 
 ## 系统要求
 
@@ -68,7 +68,7 @@ pnpm dsh plugin --profile web add "D:/Agent/dsh-opencode-gateway"
     free:
       provider: opencode-free
       serverUrl: http://127.0.0.1:10001 # opencode 后端
-      proxyPort: 10002                  # 环回监听端口
+      proxyPort: 10102                  # 环回监听端口
       opencodePath: opencode            # opencode 可执行文件
       manageBackend: true
       zenApiKeyEnv: OPENCODE_ZEN_API_KEY

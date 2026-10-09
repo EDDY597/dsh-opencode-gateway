@@ -11,7 +11,7 @@ describe('resolveConfig defaults', () => {
     expect(resolved.gateway.retryPolicy).toMatchObject({ mode: 'normal', maxRetries: 0 })
     expect(resolved.free.provider).toBe('opencode-free')
     expect(resolved.free.serverUrl).toBe('http://127.0.0.1:10001')
-    expect(resolved.free.proxyPort).toBe(10002)
+    expect(resolved.free.proxyPort).toBe(10102)
     expect(resolved.free.internalAllowedTools).toEqual(['webfetch', 'bash', 'websearch'])
   })
 

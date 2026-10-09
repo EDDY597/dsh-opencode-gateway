@@ -7,16 +7,16 @@ A DeepSeek Harness (DSH) plugin that wires the local opencode ecosystem into DSH
 | Route | Endpoint | What it carries |
 | --- | --- | --- |
 | `opencode-gateway` | `http://127.0.0.1:8787/v1` (the local opencode-api-plugin gateway) | Everything the gateway aggregates: the OpenCode Go subscription (reading the machine's local opencode login state), OpenCode Zen, and any custom upstreams in `gateway.config.json` |
-| `opencode-free` | in-process loopback proxy (default `http://127.0.0.1:10002/v1`) | The inlined opencode2api port driving the machine's own `opencode serve` backend for the Zen free tier — **no gateway process needed** |
+| `opencode-free` | in-process loopback proxy (default `http://127.0.0.1:10102/v1`) | The inlined opencode2api port driving the machine's own `opencode serve` backend for the Zen free tier — **no gateway process needed** |
 
 By design this plugin ships **no usage panel**; quota display lives in the gateway's `/api/usage` and the tray.
 
 ## Features
 
-- **Curated OpenCode Go registry** — display names, context windows, effort vocabularies, vision flags and a refusal list for 41 entries, measured request-by-request and ported from [AIMFllyYS/dsh-protocom-api](https://github.com/AIMFllyYS/dsh-protocom-api) (MIT) — including the measured quirks (Go spells its disable word `off` and refuses `none`; grok/muse serve `/responses` only, which the gateway converts transparently).
+- **Curated OpenCode Go registry** — the default menu follows the user's ZCode list (15 models); display names, context windows, effort vocabularies, vision flags and a refusal list for 41 entries, measured request-by-request and ported from [AIMFllyYS/dsh-protocom-api](https://github.com/AIMFllyYS/dsh-protocom-api) (MIT) — including the measured quirks (Go spells its disable word `off` and refuses `none`; grok/muse serve `/responses` only, which the gateway converts transparently).
 - **Live model discovery** (soft-failing) — both routes mount immediately with configured/seed menus and upgrade in place once the endpoint's listing answers; a failed read keeps the current facts serving.
 - **Managed backend lifecycle** — the free route spawns `opencode serve` when absent (first init ~10–20 s) and reclaims only a backend **it spawned**; one reused from the gateway stays with the gateway.
-- **In-process loopback bridge** — pi-ai's transport needs a real URL, so the plugin wraps the LocalProxy functions in an HTTP listener bound to loopback only (default 10002, configurable); the listener never holds the host's event loop, so headless tasks still exit.
+- **In-process loopback bridge** — pi-ai's transport needs a real URL, so the plugin wraps the LocalProxy functions in an HTTP listener bound to loopback only (default 10102, configurable); the listener never holds the host's event loop, so headless tasks still exit.
 
 ## System requirements
 
@@ -68,7 +68,7 @@ The plugin installs no settings UI; configuration lives in the composition layer
     free:
       provider: opencode-free
       serverUrl: http://127.0.0.1:10001
-      proxyPort: 10002
+      proxyPort: 10102
       opencodePath: opencode
       manageBackend: true
       zenApiKeyEnv: OPENCODE_ZEN_API_KEY
