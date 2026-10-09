@@ -46,6 +46,12 @@ export interface GatewayConfig {
     hiddenModels?: string[];
     /** Extra or overriding model entries; merged after the discovered listing. */
     models?: RouteModel[];
+    /**
+     * Merge the gateway's full live listing into the menu on top of `models`.
+     * Off by default: the explicit list is the whole menu, which keeps the
+     * duplicate alias spellings an endpoint listing carries out of the picker.
+     */
+    discoverModels?: boolean;
     /** Context capacity for a discovered model nothing else sizes. */
     defaultContextWindow?: number;
     /** Output capability for a discovered model nothing else sizes. */
@@ -89,6 +95,8 @@ export interface FreeConfig {
     useIsolatedHome?: boolean;
     /** Menu entries; when set, replaces the live listing projection entirely. */
     models?: RouteModel[];
+    /** Merge the backend's live listing into the menu on top of `models` (off by default). */
+    discoverModels?: boolean;
     /** Context capacity for a listed free model nothing else sizes. */
     defaultContextWindow?: number;
     /** Output capability for a listed free model nothing else sizes. */
@@ -111,6 +119,7 @@ export interface ResolvedConfig {
         baseURL: string;
         apiKeyEnv: string;
         hiddenModels: string[];
+        discoverModels: boolean;
         models: RouteModel[];
         defaultContextWindow: number;
         defaultMaxTokens: number;
@@ -134,6 +143,7 @@ export interface ResolvedConfig {
         autoCleanupConversations: boolean;
         useIsolatedHome: boolean;
         models: RouteModel[];
+        discoverModels: boolean;
         defaultContextWindow: number;
         defaultMaxTokens: number;
         streamIdleTimeoutMs: number;

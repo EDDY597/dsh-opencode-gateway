@@ -51,6 +51,12 @@ export interface GatewayConfig {
   hiddenModels?: string[]
   /** Extra or overriding model entries; merged after the discovered listing. */
   models?: RouteModel[]
+  /**
+   * Merge the gateway's full live listing into the menu on top of `models`.
+   * Off by default: the explicit list is the whole menu, which keeps the
+   * duplicate alias spellings an endpoint listing carries out of the picker.
+   */
+  discoverModels?: boolean
   /** Context capacity for a discovered model nothing else sizes. */
   defaultContextWindow?: number
   /** Output capability for a discovered model nothing else sizes. */
@@ -95,6 +101,8 @@ export interface FreeConfig {
   useIsolatedHome?: boolean
   /** Menu entries; when set, replaces the live listing projection entirely. */
   models?: RouteModel[]
+  /** Merge the backend's live listing into the menu on top of `models` (off by default). */
+  discoverModels?: boolean
   /** Context capacity for a listed free model nothing else sizes. */
   defaultContextWindow?: number
   /** Output capability for a listed free model nothing else sizes. */
@@ -113,19 +121,20 @@ export interface Config {
 
 /** Fully resolved configuration for both routes. */
 export interface ResolvedConfig {
-  gateway: {
+    gateway: {
     provider: string
     displayName: string
     baseURL: string
     apiKeyEnv: string
     hiddenModels: string[]
+    discoverModels: boolean
     models: RouteModel[]
     defaultContextWindow: number
     defaultMaxTokens: number
     streamIdleTimeoutMs: number
     retryPolicy: ResolvedRetryPolicy
   }
-  free: {
+    free: {
     provider: string
     displayName: string
     serverUrl: string
@@ -142,6 +151,7 @@ export interface ResolvedConfig {
     autoCleanupConversations: boolean
     useIsolatedHome: boolean
     models: RouteModel[]
+    discoverModels: boolean
     defaultContextWindow: number
     defaultMaxTokens: number
     streamIdleTimeoutMs: number
@@ -155,6 +165,7 @@ const DEFAULT_GATEWAY = {
   baseURL: 'http://127.0.0.1:8787/v1',
   apiKeyEnv: 'OPENCODE_GATEWAY_KEY',
   hiddenModels: ['free/'],
+  discoverModels: false,
   models: [] as RouteModel[],
   defaultContextWindow: 262_144,
   defaultMaxTokens: 32_768,
@@ -178,6 +189,7 @@ const DEFAULT_FREE = {
   autoCleanupConversations: true,
   useIsolatedHome: false,
   models: [] as RouteModel[],
+  discoverModels: false,
   defaultContextWindow: 262_144,
   defaultMaxTokens: 32_768,
   streamIdleTimeoutMs: 300_000,
@@ -203,6 +215,7 @@ const gatewaySchema: z<GatewayConfig> = z.object({
   baseURL: z.string().default(DEFAULT_GATEWAY.baseURL),
   apiKeyEnv: z.string().default(DEFAULT_GATEWAY.apiKeyEnv),
   hiddenModels: z.array(z.string()).default([...DEFAULT_GATEWAY.hiddenModels]),
+  discoverModels: z.boolean().default(DEFAULT_GATEWAY.discoverModels),
   models: z.array(modelEntry).default([]),
   defaultContextWindow: z.number().default(DEFAULT_GATEWAY.defaultContextWindow),
   defaultMaxTokens: z.number().default(DEFAULT_GATEWAY.defaultMaxTokens),
@@ -227,6 +240,7 @@ const freeSchema: z<FreeConfig> = z.object({
   autoCleanupConversations: z.boolean().default(DEFAULT_FREE.autoCleanupConversations),
   useIsolatedHome: z.boolean().default(DEFAULT_FREE.useIsolatedHome),
   models: z.array(modelEntry).default([]),
+  discoverModels: z.boolean().default(DEFAULT_FREE.discoverModels),
   defaultContextWindow: z.number().default(DEFAULT_FREE.defaultContextWindow),
   defaultMaxTokens: z.number().default(DEFAULT_FREE.defaultMaxTokens),
   streamIdleTimeoutMs: z.number().default(DEFAULT_FREE.streamIdleTimeoutMs),
@@ -326,6 +340,7 @@ export function resolveConfig(source: Config): ResolvedConfig {
       baseURL: gatewayBaseURL.replace(/\/+$/, ''),
       apiKeyEnv,
       hiddenModels,
+      discoverModels: gatewayRaw.discoverModels ?? DEFAULT_GATEWAY.discoverModels,
       models: resolveRouteModels(gatewayRaw.models, 'gateway.models'),
       defaultContextWindow: positiveInteger(gatewayRaw.defaultContextWindow ?? DEFAULT_GATEWAY.defaultContextWindow, 'gateway.defaultContextWindow'),
       defaultMaxTokens: positiveInteger(gatewayRaw.defaultMaxTokens ?? DEFAULT_GATEWAY.defaultMaxTokens, 'gateway.defaultMaxTokens'),
@@ -349,6 +364,7 @@ export function resolveConfig(source: Config): ResolvedConfig {
       autoCleanupConversations: freeRaw.autoCleanupConversations ?? DEFAULT_FREE.autoCleanupConversations,
       useIsolatedHome: freeRaw.useIsolatedHome ?? DEFAULT_FREE.useIsolatedHome,
       models: resolveRouteModels(freeRaw.models, 'free.models'),
+      discoverModels: freeRaw.discoverModels ?? DEFAULT_FREE.discoverModels,
       defaultContextWindow: positiveInteger(freeRaw.defaultContextWindow ?? DEFAULT_FREE.defaultContextWindow, 'free.defaultContextWindow'),
       defaultMaxTokens: positiveInteger(freeRaw.defaultMaxTokens ?? DEFAULT_FREE.defaultMaxTokens, 'free.defaultMaxTokens'),
       streamIdleTimeoutMs: positiveInteger(freeRaw.streamIdleTimeoutMs ?? DEFAULT_FREE.streamIdleTimeoutMs, 'free.streamIdleTimeoutMs', MAX_TIMER_DELAY_MS),

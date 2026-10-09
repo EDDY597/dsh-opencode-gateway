@@ -18,6 +18,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ResolvedPiAiProviderProfile, PiAiModality } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { ResolvedConfig, RouteModel } from './config.ts'
+import { GATEWAY_DEFAULT_MODELS, FREE_DEFAULT_MODELS } from './default-models.ts'
 import {
   GO_REGISTRY,
   GO_REFUSED_MODEL_IDS,
@@ -154,21 +155,19 @@ function buildProfile(
 }
 
 /**
- * The gateway route's profile: declared entries first, then the live listing
- * projected through the registry. While discovery has not answered, the
- * curated registry itself is the membership source, so the route is usable
- * the moment the plugin mounts.
+ * The gateway route's profile. The menu is the explicit `models` list — or the
+ * shipped ZCode-aligned list when none is set; the gateway's full live listing
+ * only merges in when `discoverModels` is on.
  * @param gateway - resolved gateway config.
  * @param listingIds - ids discovered from the gateway (possibly empty).
  */
 export function gatewayProfile(gateway: ResolvedConfig['gateway'], listingIds: readonly string[]): ResolvedPiAiProviderProfile {
-  const source = listingIds.length > 0
-    ? listingIds
-    : GO_REGISTRY.map(entry => `go/${entry.id}`)
-  const projected = projectGatewayListing(source, gateway)
-  const declared = gateway.models
+  const declared = gateway.models.length > 0 ? gateway.models : GATEWAY_DEFAULT_MODELS
   const seen = new Set(declared.map(entry => entry.id))
-  const models = [...declared, ...projected.filter(entry => !seen.has(entry.id))]
+  const extra = gateway.discoverModels
+    ? projectGatewayListing(listingIds, gateway).filter(entry => !seen.has(entry.id))
+    : []
+  const models = [...declared, ...extra]
   return buildProfile(
     gateway.provider,
     gateway.displayName,
@@ -182,33 +181,24 @@ export function gatewayProfile(gateway: ResolvedConfig['gateway'], listingIds: r
 }
 
 /**
- * The free route's profile. An explicit models list replaces the menu
- * entirely; otherwise the live listing (or the shipped seed while the backend
- * has not answered) is projected with curated names where they exist.
+ * The free route's profile. The menu is the explicit `models` list — or the
+ * shipped ZCode-aligned free list when none is set; the backend's live
+ * listing only merges in when `discoverModels` is on.
  * @param free - resolved free config.
  * @param liveIds - ids the inlined proxy reports, empty until its backend is healthy.
  */
 export function freeProfile(free: ResolvedConfig['free'], liveIds: readonly string[]): ResolvedPiAiProviderProfile {
-  if (free.models.length > 0) {
-    return buildProfile(
-      free.provider,
-      free.displayName,
-      `http://127.0.0.1:${free.proxyPort}/v1`,
-      free.models,
-      { contextWindow: free.defaultContextWindow, maxTokens: free.defaultMaxTokens },
-      free.streamIdleTimeoutMs,
-      free.retryPolicy,
-    )
-  }
-  const ids = liveIds.length > 0 ? [...liveIds] : FREE_SEED.map(entry => entry.id)
-  const models: RouteModel[] = ids.map(id => {
-    const curated = FREE_SEED.find(entry => entry.id === id)
-    const bare = bareModelId(id)
-    return {
-      id,
-      ...(curated !== undefined ? { name: curated.displayName, contextWindow: curated.contextWindow } : { name: prettifyId(bare) }),
-    }
-  })
+  const declared = free.models.length > 0 ? free.models : FREE_DEFAULT_MODELS
+  const seen = new Set(declared.map(entry => entry.id))
+  const extra = free.discoverModels
+    ? liveIds
+        .filter(id => !seen.has(id))
+        .map(id => {
+          const bare = bareModelId(id)
+          return { id, name: prettifyId(bare) }
+        })
+    : []
+  const models = [...declared, ...extra]
   return buildProfile(
     free.provider,
     free.displayName,

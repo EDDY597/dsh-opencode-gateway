@@ -22,18 +22,17 @@ import type { ResolvedConfig, RouteModel } from './config.ts';
  */
 export declare function projectGatewayListing(listingIds: readonly string[], gateway: ResolvedConfig['gateway']): RouteModel[];
 /**
- * The gateway route's profile: declared entries first, then the live listing
- * projected through the registry. While discovery has not answered, the
- * curated registry itself is the membership source, so the route is usable
- * the moment the plugin mounts.
+ * The gateway route's profile. The menu is the explicit `models` list — or the
+ * shipped ZCode-aligned list when none is set; the gateway's full live listing
+ * only merges in when `discoverModels` is on.
  * @param gateway - resolved gateway config.
  * @param listingIds - ids discovered from the gateway (possibly empty).
  */
 export declare function gatewayProfile(gateway: ResolvedConfig['gateway'], listingIds: readonly string[]): ResolvedPiAiProviderProfile;
 /**
- * The free route's profile. An explicit models list replaces the menu
- * entirely; otherwise the live listing (or the shipped seed while the backend
- * has not answered) is projected with curated names where they exist.
+ * The free route's profile. The menu is the explicit `models` list — or the
+ * shipped ZCode-aligned free list when none is set; the backend's live
+ * listing only merges in when `discoverModels` is on.
  * @param free - resolved free config.
  * @param liveIds - ids the inlined proxy reports, empty until its backend is healthy.
  */

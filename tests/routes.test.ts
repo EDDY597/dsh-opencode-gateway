@@ -5,7 +5,8 @@ import {
   gatewayProfile,
   freeProfile,
 } from '../src/routes.ts'
-import { GO_REFUSED_MODEL_IDS, FREE_SEED, reasoningEffortsFor, lookupEntry } from '../src/registry.ts'
+import { GO_REFUSED_MODEL_IDS, reasoningEffortsFor, lookupEntry } from '../src/registry.ts'
+import { GATEWAY_DEFAULT_MODELS, FREE_DEFAULT_MODELS } from '../src/default-models.ts'
 
 function gatewayOf(overrides: Partial<ReturnType<typeof resolveConfig>['gateway']> = {}) {
   const resolved = resolveConfig({ gateway: overrides as any })
@@ -77,32 +78,64 @@ describe('reasoningEffortsFor', () => {
 })
 
 describe('route profiles', () => {
-  it('gateway profile: declared entries lead, projected ones follow, no dup', () => {
+  it('gateway profile default: the shipped ZCode-aligned list in order', () => {
+    const resolved = resolveConfig({})
+    const profile = gatewayProfile(resolved.gateway, [])
+    const models = profile.piProvider?.getModels?.() ?? []
+    const ids = models.map(model => model.id)
+    expect(ids[0]).toBe('go/deepseek-v4.1-flash')
+    expect(ids).toContain('go/kimi-k3')
+    expect(ids).toContain('free/big-pickle')
+    expect(ids).toHaveLength(15)
+  })
+
+  it('shipped gateway list matches the free-route seven free models', () => {
+    const freeIds = FREE_DEFAULT_MODELS.map(entry => entry.id)
+    const gatewayFreeIds = GATEWAY_DEFAULT_MODELS
+      .filter(entry => entry.id.startsWith('free/'))
+      .map(entry => entry.id.replace(/^free\//, 'opencode/'))
+    expect(gatewayFreeIds).toEqual(freeIds)
+  })
+
+  it('gateway profile: discovered extras merge only when discoverModels is on', () => {
+    const off = resolveConfig({})
+    const profileOff = gatewayProfile(off.gateway, ['go/brand-new-model'])
+    expect((profileOff.piProvider?.getModels?.() ?? []).some(model => model.id === 'go/brand-new-model')).toBe(false)
+
+    const on = resolveConfig({ gateway: { discoverModels: true } })
+    const profileOn = gatewayProfile(on.gateway, ['go/brand-new-model'])
+    const models = profileOn.piProvider?.getModels?.() ?? []
+    expect(models.some(model => model.id === 'go/brand-new-model')).toBe(true)
+    expect(models.some(model => model.id === 'go/deepseek-v4.1-flash')).toBe(true)
+  })
+
+  it('gateway profile: explicit models replace the shipped list', () => {
     const resolved = resolveConfig({
       gateway: { models: [{ id: 'go/mine', name: 'Mine' }] },
     })
-    const profile = gatewayProfile(resolved.gateway, ['go/mine', 'go/kimi-k3'])
+    const profile = gatewayProfile(resolved.gateway, [])
     const models = profile.piProvider?.getModels?.() ?? []
-    const ids = models.map(model => model.id)
-    expect(ids[0]).toBe('go/mine')
-    expect(ids).toContain('go/kimi-k3')
-    expect(ids.filter(id => id === 'go/mine')).toHaveLength(1)
+    expect(models.map(model => model.id)).toEqual(['go/mine'])
   })
 
-  it('free profile: seed used while the backend has not answered', () => {
+  it('free profile default: shipped raw-id list while the backend has not answered', () => {
     const resolved = resolveConfig({})
     const profile = freeProfile(resolved.free, [])
     const models = profile.piProvider?.getModels?.() ?? []
-    expect(models.map(model => model.id)).toEqual(FREE_SEED.map(entry => entry.id))
+    expect(models.map(model => model.id)).toEqual(FREE_DEFAULT_MODELS.map(entry => entry.id))
+    expect(models[0]?.name).toBe('Big Pickle')
   })
 
-  it('free profile: live listing replaces the seed and curates known ids', () => {
-    const resolved = resolveConfig({})
-    const profile = freeProfile(resolved.free, ['opencode/space-bunny-free', 'opencode/brand-new'])
-    const models = profile.piProvider?.getModels?.() ?? []
-    expect(models.map(model => model.id)).toEqual(['opencode/space-bunny-free', 'opencode/brand-new'])
-    expect(models[0]?.name).toBe('Space Bunny Free')
-    expect(models[1]?.name).toBe('Brand New')
+  it('free profile: live listing merges only when discoverModels is on', () => {
+    const off = resolveConfig({})
+    const profileOff = freeProfile(off.free, ['opencode/extra-model'])
+    expect((profileOff.piProvider?.getModels?.() ?? []).some(model => model.id === 'opencode/extra-model')).toBe(false)
+
+    const on = resolveConfig({ free: { discoverModels: true } })
+    const profileOn = freeProfile(on.free, ['opencode/extra-model'])
+    const models = profileOn.piProvider?.getModels?.() ?? []
+    expect(models.some(model => model.id === 'opencode/extra-model')).toBe(true)
+    expect(models[0]?.id).toBe('opencode/big-pickle')
   })
 
   it('free profile: explicit models override everything', () => {
