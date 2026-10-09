@@ -1,0 +1,34 @@
+export type LocalProxyConfig = {
+    id: string;
+    serverUrl: string;
+    serverPassword?: string;
+    opencodePath: string;
+    manageBackend: boolean;
+    useIsolatedHome: boolean;
+    requestTimeoutMs: number;
+    disableTools: boolean;
+    internalWebFetchEnabled: boolean;
+    internalAllowedTools: string[];
+    promptMode: string;
+    omitSystemPrompt: boolean;
+    zenApiKey?: string;
+    autoCleanupConversations: boolean;
+    cleanupIntervalMs: number;
+    cleanupMaxAgeMs: number;
+    eventIdleTimeoutMs?: number;
+    eventFirstDeltaTimeoutMs?: number;
+    debug: boolean;
+    toolLockPluginPath: string;
+};
+export declare function normalizeLocalProxyConfig(raw: any): LocalProxyConfig;
+export type LocalProxy = {
+    id: string;
+    listModels(): Promise<string[]>;
+    handleChat(body: any, stream: boolean): Promise<Response>;
+    handleResponses(body: any, stream: boolean): Promise<Response>;
+    healthDetails(): any;
+    metricsText(): string;
+    warmup(): Promise<void>;
+    killBackend(): void;
+};
+export declare function createLocalProxy(config: LocalProxyConfig): LocalProxy;
