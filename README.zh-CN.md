@@ -76,6 +76,17 @@ pnpm dsh plugin --profile web add "D:/Agent/dsh-opencode-gateway"
       internalAllowedTools: [webfetch, bash, websearch]
 ```
 
+## 模型管理页
+
+DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两张卡片分别管理 OpenCode Go 与 OpenCode Free 路由的模型菜单。
+
+- **刷新**：向对应端点拉取实时模型列表（OpenCode Go 走网关 `/v1/models`，OpenCode Free 走内联代理的后端 listing）。
+- **勾选**：勾选的模型进入模型菜单（含输入框芯片）；未勾选的仅在此列出。从 listing 新发现的模型标"发现"。
+- **保存勾选**：以修订号围栏的原子写入 settings 页，菜单与输入框芯片即时更新，重启后保留；冲突时整页重载并丢弃暂存。
+- **恢复内置默认**：unset 该路由的 `models`，菜单回到内置清单（组合层 `models` 若配置过则以它为基底）。
+
+优先级：settings 里保存过 `models`（哪怕空数组）> 组合层 `cordis.patch.yml` 的 `models` > 内置默认。保存条目只带 id / 名字 / 容量时，宿主会从内置实测名录补齐缺失的思考强度词表与视觉标记（显式写 `reasoningEfforts: false` 不受影响）。后端结构性字段（serverUrl / proxyPort / opencodePath 等）在设置页改动后需要重启才生效，模型菜单是即时生效的。
+
 ### 环境变量（`~/.dsh/.env`）
 
 | 变量 | 说明 |

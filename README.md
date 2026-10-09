@@ -76,6 +76,17 @@ The plugin installs no settings UI; configuration lives in the composition layer
       internalAllowedTools: [webfetch, bash, websearch]
 ```
 
+## Model manager page
+
+DSH settings gain an **OpenCode Gateway** section (plugin v0.2.0+): one card per route (OpenCode Go / OpenCode Free) managing that route's model menu.
+
+- **Refresh** pulls the live listing (OpenCode Go via the gateway's `/v1/models`, OpenCode Free via the inlined proxy's backend listing).
+- **Checkboxes** decide what lands in the model menu (composer chip included); newly discovered models are tagged and unchecked.
+- **Save checked** commits one revision-fenced settings write; the menu and chip update immediately and survive restarts; a conflict reloads the snapshot and drops staging.
+- **Restore defaults** unsets that route's `models` — the menu falls back to the shipped list (or the composition `models`, when configured).
+
+Precedence: saved settings `models` (even an empty array) > composition `cordis.patch.yml` `models` > shipped defaults. Saved entries that carry only id/name/context are enriched by the host from the measured registry (missing effort vocabulary and vision flags; an explicit `reasoningEfforts: false` is never touched). Backend-structural fields (serverUrl / proxyPort / opencodePath …) ask for a restart when changed on the page; the model menu applies live.
+
 ### Environment (`~/.dsh/.env`)
 
 | Variable | Meaning |
