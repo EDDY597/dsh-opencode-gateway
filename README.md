@@ -6,7 +6,7 @@ A DeepSeek Harness (DSH) plugin that wires the local opencode ecosystem into DSH
 
 | Route | Endpoint | What it carries |
 | --- | --- | --- |
-| `opencode-gateway` | `http://127.0.0.1:8787/v1` (the local opencode-api-plugin gateway) | Everything the gateway aggregates: the OpenCode Go subscription (reading the machine's local opencode login state), OpenCode Zen, and any custom upstreams in `gateway.config.json` |
+| `opencode-gateway` | `http://127.0.0.1:8787/v1` (the local [opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) gateway) | Everything the gateway aggregates: the OpenCode Go subscription (reading the machine's local opencode login state), OpenCode Zen, and any custom upstreams in `gateway.config.json` |
 | `opencode-free` | in-process loopback proxy (default `http://127.0.0.1:10102/v1`) | The inlined opencode2api port driving the machine's own `opencode serve` backend for the Zen free tier — **no gateway process needed** |
 
 By design this plugin ships **no usage panel**; quota display lives in the gateway's `/api/usage` and the tray.
@@ -22,7 +22,7 @@ By design this plugin ships **no usage panel**; quota display lives in the gatew
 
 - **DSH ≥ 0.1.7-rc.2 and < 0.3.0-0** (measured peer range); verified on **0.2.0-rc.2**
 - The free tier needs the opencode CLI installed; `opencode auth login` is recommended (better model list and limits, anonymous works too)
-- The gateway route needs the opencode-api-plugin gateway running (`start-gateway.cmd` or the tray)
+- The gateway route needs the companion gateway [EDDY597/opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) running (`start-gateway.cmd`, `start-tray-hidden.vbs` or the tray)
 
 ## Install
 

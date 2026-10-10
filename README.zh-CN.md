@@ -6,7 +6,7 @@ DeepSeek Harness（DSH）插件：把本机 opencode 生态接进 DSH 的模型�
 
 | route | 端点 | 承载内容 |
 | --- | --- | --- |
-| `opencode-gateway` | `http://127.0.0.1:8787/v1`（本仓库网关） | 网关聚合的一切：OpenCode Go 订阅（读本地 opencode 登录态）、OpenCode Zen、以及 gateway.config.json 里的任意自定义上游 |
+| `opencode-gateway` | `http://127.0.0.1:8787/v1`（本机 [opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) 网关） | 网关聚合的一切：OpenCode Go 订阅（读本地 opencode 登录态）、OpenCode Zen、以及 gateway.config.json 里的任意自定义上游 |
 | `opencode-free` | 插件进程内环回代理（默认 `http://127.0.0.1:10102/v1`） | 内联的 opencode2api 移植：驱动本机 `opencode serve` 后端访问 Zen 免费档，**不依赖网关进程** |
 
 按设计本插件**不带用量面板**；额度显示由网关的 `/api/usage` 与托盘承担。
@@ -22,7 +22,7 @@ DeepSeek Harness（DSH）插件：把本机 opencode 生态接进 DSH 的模型�
 
 - **DSH ≥ 0.1.7-rc.2 且 < 0.3.0-0**（peer 实测范围），已在 **0.2.0-rc.2** 验证
 - 免费档需要本机装有 opencode CLI，建议先 `opencode auth login`（免费账号模型列表与限额更好，匿名也能用）
-- 网关路由需要 opencode-api-plugin 网关在运行（`start-gateway.cmd` 或托盘）
+- 网关路由需要配套网关 [EDDY597/opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) 在运行（`start-gateway.cmd`、`start-tray-hidden.vbs` 或托盘）
 
 ## 安装
 
