@@ -150,7 +150,7 @@ describe('route profiles', () => {
   it('profiles carry a resolved retry policy and the credential reference', () => {
     const resolved = resolveConfig({ gateway: { apiKeyEnv: 'MY_KEY' } })
     const profile = gatewayProfile(resolved.gateway, [])
-    expect(profile.retryPolicy).toMatchObject({ mode: 'normal', maxRetries: 0 })
+    expect(profile.retryPolicy).toMatchObject({ mode: 'normal', maxRetries: 2 })
     expect(profile.apiKeyEnv).toBeDefined()
   })
 })

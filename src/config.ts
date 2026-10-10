@@ -184,7 +184,12 @@ const DEFAULT_GATEWAY = {
   defaultContextWindow: 262_144,
   defaultMaxTokens: 32_768,
   streamIdleTimeoutMs: 300_000,
-  retryPolicy: { mode: 'normal', maxRetries: 0 } as RetryPolicyConfig,
+  // Two bounded retries, not zero: the upstream (opencode.ai via the proxy
+  // chain) kills long streaming turns mid-flight; its structured error frame
+  // classifies as TRANSPORT — inside dsh-llm's default retryable set — so an
+  // executor plugin (official @deepseek-ai/dsh-llm-retry) reruns the whole
+  // step instead of surfacing the failure.
+  retryPolicy: { mode: 'normal', maxRetries: 2 } as RetryPolicyConfig,
 }
 
 const DEFAULT_FREE = {
@@ -207,7 +212,9 @@ const DEFAULT_FREE = {
   defaultContextWindow: 262_144,
   defaultMaxTokens: 32_768,
   streamIdleTimeoutMs: 300_000,
-  retryPolicy: { mode: 'normal', maxRetries: 0 } as RetryPolicyConfig,
+  // Same reasoning as DEFAULT_GATEWAY: TRANSPORT failures (cut long turns)
+  // become whole-step retries under the official executor plugin.
+  retryPolicy: { mode: 'normal', maxRetries: 2 } as RetryPolicyConfig,
 }
 
 // The schema shapes stay loose (z.any()) because schemastery's generative

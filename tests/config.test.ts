@@ -10,7 +10,7 @@ describe('resolveConfig defaults', () => {
     expect(resolved.gateway.baseURL).toBe('http://127.0.0.1:8787/v1')
     expect(resolved.gateway.apiKeyEnv).toBe('OPENCODE_GATEWAY_KEY')
     expect(resolved.gateway.hiddenModels).toEqual(['free/'])
-    expect(resolved.gateway.retryPolicy).toMatchObject({ mode: 'normal', maxRetries: 0 })
+    expect(resolved.gateway.retryPolicy).toMatchObject({ mode: 'normal', maxRetries: 2 })
     expect(resolved.free.provider).toBe('opencode-free')
     expect(resolved.free.serverUrl).toBe('http://127.0.0.1:10001')
     expect(resolved.free.proxyPort).toBe(10102)
