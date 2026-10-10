@@ -175,6 +175,14 @@ export const GO_REGISTRY: readonly RegistryEntry[] = [
     vision: true,
   },
   {
+    id: 'step-5-preview-free',
+    displayName: 'Step-5 Preview Free',
+    contextWindow: 1_000_000,
+    // Measured 2026-10-10 against zen/go: `none`, `off` and `minimum` answer 400.
+    reasoning: { efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
+    vision: true,
+  },
+  {
     id: 'gpt-6-luna',
     displayName: 'GPT-6 Luna',
     contextWindow: 1_050_000,
