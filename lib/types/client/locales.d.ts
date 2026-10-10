@@ -7,7 +7,7 @@
 export declare const en: {
     readonly nav: "OpenCode Gateway";
     readonly title: "OpenCode Gateway";
-    readonly intro: "Refresh the live model listing and pick which models land in the model menu. A checked model is menu-visible (composer chip included); an unchecked one is only listed here.";
+    readonly intro: "Refresh the live model listing and pick which models land in the model menu. A checked model is menu-visible (composer chip included); an unchecked one is only listed here. A checked model that the endpoint no longer serves is tagged \"not listed\" — it is never removed automatically; uncheck it and save to drop it.";
     readonly cardGateway: "OpenCode Go (subscription via gateway)";
     readonly cardFree: "OpenCode Free (local free tier)";
     readonly refresh: "Refresh";
@@ -18,6 +18,7 @@ export declare const en: {
     readonly resetDefaults: "Restore defaults";
     readonly contextChip: "ctx";
     readonly discoveredTag: "discovered";
+    readonly notInListing: "not listed";
     readonly emptyListing: "No models answered. Refresh once the route is reachable.";
     readonly discoverRefused: "Refresh failed: {message}";
     readonly loadFailed: "Settings load failed: {message}";

@@ -8,7 +8,7 @@
 export const en = {
   nav: 'OpenCode Gateway',
   title: 'OpenCode Gateway',
-  intro: 'Refresh the live model listing and pick which models land in the model menu. A checked model is menu-visible (composer chip included); an unchecked one is only listed here.',
+  intro: 'Refresh the live model listing and pick which models land in the model menu. A checked model is menu-visible (composer chip included); an unchecked one is only listed here. A checked model that the endpoint no longer serves is tagged "not listed" — it is never removed automatically; uncheck it and save to drop it.',
   cardGateway: 'OpenCode Go (subscription via gateway)',
   cardFree: 'OpenCode Free (local free tier)',
   refresh: 'Refresh',
@@ -19,6 +19,7 @@ export const en = {
   resetDefaults: 'Restore defaults',
   contextChip: 'ctx',
   discoveredTag: 'discovered',
+  notInListing: 'not listed',
   emptyListing: 'No models answered. Refresh once the route is reachable.',
   discoverRefused: 'Refresh failed: {message}',
   loadFailed: 'Settings load failed: {message}',
@@ -32,7 +33,7 @@ export const en = {
 export const zh: Record<keyof typeof en, string> = {
   nav: 'OpenCode 网关',
   title: 'OpenCode 网关',
-  intro: '刷新实时模型列表，并勾选哪些模型进入模型菜单。勾选的模型在菜单与输入框可见；未勾选的仅在此列出。',
+  intro: '刷新实时模型列表，并勾选哪些模型进入模型菜单。勾选的模型在菜单与输入框可见；未勾选的仅在此列出。已勾选但端点不再提供（下架/被路由前缀过滤）的模型会标「不在列表」——不会自动移除，取消勾选并保存即可移除。',
   cardGateway: 'OpenCode Go（订阅 · 经网关）',
   cardFree: 'OpenCode Free（本地免费档）',
   refresh: '刷新',
@@ -43,6 +44,7 @@ export const zh: Record<keyof typeof en, string> = {
   resetDefaults: '恢复内置默认',
   contextChip: '上下文',
   discoveredTag: '发现',
+  notInListing: '不在列表',
   emptyListing: '没有模型应答。路由可达后再点刷新。',
   discoverRefused: '刷新失败：{message}',
   loadFailed: '设置读取失败：{message}',

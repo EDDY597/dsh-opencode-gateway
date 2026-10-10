@@ -85,16 +85,18 @@ describe('route profiles', () => {
     const ids = models.map(model => model.id)
     expect(ids[0]).toBe('go/deepseek-v4.1-flash')
     expect(ids).toContain('go/kimi-k3')
-    expect(ids).toContain('free/big-pickle')
-    expect(ids).toHaveLength(15)
+    // The Go card ships subscription models only; the free tier belongs to the
+    // OpenCode Free card (and its raw `opencode/` wire ids).
+    expect(ids.filter(id => id.startsWith('free/'))).toEqual([])
+    expect(ids).toHaveLength(8)
   })
 
-  it('shipped gateway list matches the free-route seven free models', () => {
-    const freeIds = FREE_DEFAULT_MODELS.map(entry => entry.id)
-    const gatewayFreeIds = GATEWAY_DEFAULT_MODELS
-      .filter(entry => entry.id.startsWith('free/'))
-      .map(entry => entry.id.replace(/^free\//, 'opencode/'))
-    expect(gatewayFreeIds).toEqual(freeIds)
+  it('shipped lists stay disjoint: no free ids on the gateway route', () => {
+    const freeIds = FREE_DEFAULT_MODELS.map(entry => entry.id.replace(/^opencode\//, ''))
+    const gatewayBares = new Set(GATEWAY_DEFAULT_MODELS.map(entry => entry.id.replace(/^go\//, '')))
+    for (const freeId of freeIds) {
+      expect(gatewayBares.has(freeId)).toBe(false)
+    }
   })
 
   it('gateway profile: discovered extras merge only when discoverModels is on', () => {

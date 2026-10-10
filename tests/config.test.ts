@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { resolveConfig, type Config } from '../src/config.ts'
+import { Config, DEFAULT_CONFIG, readSection, resolveConfig, type Config as ConfigShape } from '../src/config.ts'
+import { gatewayProfile } from '../src/routes.ts'
+import { GATEWAY_DEFAULT_MODELS } from '../src/default-models.ts'
 
 describe('resolveConfig defaults', () => {
   it('fills both routes from defaults when the config is empty', () => {
@@ -23,7 +25,7 @@ describe('resolveConfig defaults', () => {
 })
 
 describe('resolveConfig validation', () => {
-  const base: Config = {}
+  const base: ConfigShape = {}
 
   it('refuses identical provider keys', () => {
     expect(() => resolveConfig({ gateway: { provider: 'x' }, free: { provider: 'x' } })).toThrow(/both routes/)
@@ -55,5 +57,40 @@ describe('resolveConfig validation', () => {
 
   it('refuses a non-positive proxy port', () => {
     expect(() => resolveConfig({ free: { proxyPort: 0 } })).toThrow(/proxyPort/)
+  })
+})
+
+describe('schema materialization', () => {
+  // Schemastery hands a caller who never mentioned a list back an empty one,
+  // which both runtimes read as a deliberate "no models". The route schemas
+  // keep an omitted list omitted; these cases pin that down.
+  // Sections are volatile refs in the composed config: unwrap before reading.
+  const materialize = (input: unknown) => readSection((Config(input as ConfigShape) as { gateway?: unknown }).gateway as never)
+
+  it('keeps an omitted model list omitted', () => {
+    const materialized = materialize({ gateway: { baseURL: 'http://127.0.0.1:9/v1' } })
+    expect(materialized?.models).toBeUndefined()
+    const resolved = resolveConfig({ gateway: materialized })
+    expect(resolved.gateway.models).toBeUndefined()
+    expect(gatewayProfile(resolved.gateway, []).piProvider?.getModels?.() ?? [])
+      .toHaveLength(GATEWAY_DEFAULT_MODELS.length)
+  })
+
+  it('keeps an entry without input valid', () => {
+    const materialized = materialize({ gateway: { models: [{ id: 'go/glm-5.3-flash' }] } })
+    expect(materialized?.models).toEqual([{ id: 'go/glm-5.3-flash' }])
+    expect(() => resolveConfig({ gateway: materialized })).not.toThrow()
+  })
+
+  it('keeps an explicit empty list empty', () => {
+    const materialized = materialize({ gateway: { models: [] } })
+    expect(materialized?.models).toEqual([])
+    const resolved = resolveConfig({ gateway: materialized })
+    expect(gatewayProfile(resolved.gateway, []).piProvider?.getModels?.() ?? []).toHaveLength(0)
+  })
+
+  it('ships defaults without an explicit list', () => {
+    expect(DEFAULT_CONFIG.gateway?.models).toBeUndefined()
+    expect(DEFAULT_CONFIG.free?.models).toBeUndefined()
   })
 })

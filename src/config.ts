@@ -181,7 +181,6 @@ const DEFAULT_GATEWAY = {
   apiKeyEnv: 'OPENCODE_GATEWAY_KEY',
   hiddenModels: ['free/'],
   discoverModels: false,
-  models: [] as RouteModel[],
   defaultContextWindow: 262_144,
   defaultMaxTokens: 32_768,
   streamIdleTimeoutMs: 300_000,
@@ -204,7 +203,6 @@ const DEFAULT_FREE = {
   requestTimeoutMs: 300_000,
   autoCleanupConversations: true,
   useIsolatedHome: false,
-  models: [] as RouteModel[],
   discoverModels: false,
   defaultContextWindow: 262_144,
   defaultMaxTokens: 32_768,
@@ -223,13 +221,18 @@ const DEFAULT_FREE = {
 // carries NO schema default on purpose — absent means "inherit" (composition
 // base, then the shipped menu), while a set empty array means the user took
 // the menu over and unchecked everything; those two states must stay distinct.
+// Schemastery would defeat that on its own: a bare `z.array(...)` comes back as
+// `[]` for a caller who never mentioned it, which is also how every route ends
+// up with no menu at all. `optionalList` keeps an omitted list omitted.
+const optionalList = (item: z<any>): z<any> => z.union([z.array(item), z.const(undefined)])
+
 const modelEntry: z<RouteModel> = z.object({
   id: z.string().required(),
   name: z.string(),
   contextWindow: z.number(),
   maxTokens: z.number(),
   reasoningEfforts: z.any(),
-  input: z.array(z.string()),
+  input: optionalList(z.string()),
 }) as unknown as z<RouteModel>
 
 const gatewaySectionSchema: z<GatewayConfig> = z.object({
@@ -239,7 +242,7 @@ const gatewaySectionSchema: z<GatewayConfig> = z.object({
   apiKeyEnv: z.string().default(DEFAULT_GATEWAY.apiKeyEnv),
   hiddenModels: z.array(z.string()).default([...DEFAULT_GATEWAY.hiddenModels]),
   discoverModels: z.boolean().default(DEFAULT_GATEWAY.discoverModels),
-  models: z.array(modelEntry),
+  models: optionalList(modelEntry),
   defaultContextWindow: z.number().default(DEFAULT_GATEWAY.defaultContextWindow),
   defaultMaxTokens: z.number().default(DEFAULT_GATEWAY.defaultMaxTokens),
   streamIdleTimeoutMs: z.number().default(DEFAULT_GATEWAY.streamIdleTimeoutMs),
@@ -262,7 +265,7 @@ const freeSectionSchema: z<FreeConfig> = z.object({
   requestTimeoutMs: z.number().default(DEFAULT_FREE.requestTimeoutMs),
   autoCleanupConversations: z.boolean().default(DEFAULT_FREE.autoCleanupConversations),
   useIsolatedHome: z.boolean().default(DEFAULT_FREE.useIsolatedHome),
-  models: z.array(modelEntry),
+  models: optionalList(modelEntry),
   discoverModels: z.boolean().default(DEFAULT_FREE.discoverModels),
   defaultContextWindow: z.number().default(DEFAULT_FREE.defaultContextWindow),
   defaultMaxTokens: z.number().default(DEFAULT_FREE.defaultMaxTokens),
@@ -404,6 +407,6 @@ export function resolveConfig(source: ConfigInput): ResolvedConfig {
 
 /** Default settings used by an absent section and by composition examples. */
 export const DEFAULT_CONFIG: Config = {
-  gateway: { ...DEFAULT_GATEWAY, hiddenModels: [...DEFAULT_GATEWAY.hiddenModels], models: [] },
-  free: { ...DEFAULT_FREE, internalAllowedTools: [...DEFAULT_FREE.internalAllowedTools], models: [] },
+  gateway: { ...DEFAULT_GATEWAY, hiddenModels: [...DEFAULT_GATEWAY.hiddenModels] },
+  free: { ...DEFAULT_FREE, internalAllowedTools: [...DEFAULT_FREE.internalAllowedTools] },
 }

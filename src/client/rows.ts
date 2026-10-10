@@ -16,6 +16,14 @@ export interface RowState {
   enabled: boolean
   /** Came from the live listing rather than the shipped/effective menu. */
   discovered: boolean
+  /**
+   * Whether this id answered in the latest refresh. `true` while no refresh
+   * has answered; a checked row that flips to `false` has gone missing from
+   * the endpoint (officially removed, or filtered by the route's prefixes).
+   * The menu never removes such a model on its own — unchecking + saving is
+   * the explicit removal path.
+   */
+  inListing: boolean
 }
 
 /** The facts one route card renders from. */
@@ -42,14 +50,15 @@ export function assembleRows(input: RouteRowsInput): RowState[] {
   const rows: RowState[] = []
   const seen = new Set<string>()
   const effectiveIds = new Set(input.effective.map(entry => entry.id))
+  const listedIds = new Set((input.discovered ?? []).map(model => model.id))
   for (const entry of input.effective) {
     seen.add(entry.id)
-    rows.push({ entry, enabled: true, discovered: false })
+    rows.push({ entry, enabled: true, discovered: false, inListing: listedIds.size === 0 || listedIds.has(entry.id) })
   }
   for (const entry of input.shipped) {
     if (seen.has(entry.id) || effectiveIds.has(entry.id)) continue
     seen.add(entry.id)
-    rows.push({ entry, enabled: false, discovered: false })
+    rows.push({ entry, enabled: false, discovered: false, inListing: listedIds.size === 0 || listedIds.has(entry.id) })
   }
   for (const model of input.discovered ?? []) {
     if (seen.has(model.id)) continue
@@ -58,6 +67,7 @@ export function assembleRows(input: RouteRowsInput): RowState[] {
       entry: discoveredEntry(model),
       enabled: false,
       discovered: true,
+      inListing: true,
     })
   }
   return rows

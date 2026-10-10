@@ -14,6 +14,14 @@ export interface RowState {
     enabled: boolean;
     /** Came from the live listing rather than the shipped/effective menu. */
     discovered: boolean;
+    /**
+     * Whether this id answered in the latest refresh. `true` while no refresh
+     * has answered; a checked row that flips to `false` has gone missing from
+     * the endpoint (officially removed, or filtered by the route's prefixes).
+     * The menu never removes such a model on its own — unchecking + saving is
+     * the explicit removal path.
+     */
+    inListing: boolean;
 }
 /** The facts one route card renders from. */
 export interface RouteRowsInput {

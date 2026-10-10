@@ -43,6 +43,25 @@ describe('assembleRows', () => {
   })
 })
 
+describe('staleness after a refresh', () => {
+  it('a checked model missing from the fresh listing is tagged not-listed, not dropped', () => {
+    // The endpoint no longer serves go/kimi-k3 independently.
+    const discovered: LlmDiscoveredModel[] = shipped
+      .filter(entry => entry.id !== 'go/kimi-k3')
+      .map(entry => ({ id: entry.id }))
+    const rows = assembleRows(input({ discovered }))
+    const stale = rows.find(row => row.entry.id === 'go/kimi-k3')
+    expect(stale).toBeDefined()
+    expect(stale?.enabled).toBe(true)
+    expect(stale?.inListing).toBe(false)
+    expect(rows.filter(row => !row.inListing)).toHaveLength(1)
+  })
+
+  it('every row is in-listing while no refresh has answered', () => {
+    expect(assembleRows(input()).every(row => row.inListing)).toBe(true)
+  })
+})
+
 describe('discoveredEntry', () => {
   it('keeps listing facts verbatim, inventing nothing', () => {
     const entry = discoveredEntry({ id: 'x/y', contextWindow: 1000, inputModalities: ['text'] })

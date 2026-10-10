@@ -113,6 +113,7 @@ function Card({ routeKey, spec, view, probe, checked, staged, busy, t, onToggle,
             />
             <span className="ocgw-row-name">{row.entry.name ?? row.entry.id}</span>
             {row.discovered ? <span className="ocgw-tag">{t('discoveredTag')}</span> : undefined}
+            {row.inListing ? undefined : <span className="ocgw-tag ocgw-tag-stale">{t('notInListing')}</span>}
             <span className="ocgw-spacer" />
             <span className="ocgw-row-id">{row.entry.id}</span>
             {row.entry.contextWindow !== undefined ? (
