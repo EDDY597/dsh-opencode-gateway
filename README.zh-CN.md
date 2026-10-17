@@ -128,7 +128,7 @@ DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两�
 
 | 检查 | 正确状态 | 不对时 |
 | --- | --- | --- |
-| 网关 `gateway.config.json` 的 `opencode-go` upstream | `"enabled": true`、`"prefix": "go"`、`apiKey` 不是 `REPLACE_WITH_...` | 按下面模板改，托盘 → 重启服务 |
+| 网关 `gateway.config.json` 的 `opencode-go` upstream | `"enabled": true`、`"prefix": "go"`；`apiKey` 要么不写（用本机登录态），要么是已开通 Go 订阅的 Key | 按下面模板改，托盘 → 重启服务 |
 | `curl -H "Authorization: Bearer <token>" http://127.0.0.1:8787/v1/models` | 响应里有 `go/...` | 只有 `free/...`：前缀或开关没生效；HTTP 401：token 不对 |
 | `~/.dsh/.env` 的 `OPENCODE_GATEWAY_KEY` | 与网关 `token` 一致 | 写入后重启 DSH |
 
@@ -143,7 +143,6 @@ DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两�
       "id": "opencode-go",
       "type": "opencode-go",
       "prefix": "go",
-      "apiKey": "<OpenCode API Key；也可删掉这一行改用本机 opencode 登录态>",
       "enabled": true
     }
   ]
@@ -156,6 +155,11 @@ DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两�
 - **第一次刷新可能为空。** 网关冷启动时先返回上次结果（最多等 8 秒），后台读取完成后再次刷新即完整。
 - 刷新现在会区分「200 空列表 / HTTP 401 / 超时」；若看到 `no credential resolved from OPENCODE_GATEWAY_KEY`，就是 `.env` 没配。
 - **免费档与这些无关**：`OpenCode Free` 卡不经过 8787 网关。
+
+聊天侧的两个常见错误：
+
+- `403 An active OpenCode Go subscription is required`：网关 `opencode-go` 用的 Key 没有 Go 订阅（列表仍可能是正常的，目录是公开的）。删掉 `apiKey` 改用本机 `opencode auth login` 登录态，或换已订阅的 Key，然后重启网关。
+- `Connection error.`：网关进程没在跑，不是 Key 问题。`curl http://127.0.0.1:8787/health` 返回 `{"status":"ok"}` 才说明在线。
 
 ## 开发
 

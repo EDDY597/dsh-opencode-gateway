@@ -128,7 +128,7 @@ That notice is a safe failure: the menu is never modified. Check these three thi
 
 | Check | Expected | If wrong |
 | --- | --- | --- |
-| The gateway's `opencode-go` upstream in `gateway.config.json` | `"enabled": true`, `"prefix": "go"`, `apiKey` not `REPLACE_WITH_...` | apply the template below, then tray → Restart service |
+| The gateway's `opencode-go` upstream in `gateway.config.json` | `"enabled": true`, `"prefix": "go"`; `apiKey` either omitted (local login) or a Go-subscribed key | apply the template below, then tray → Restart service |
 | `curl -H "Authorization: Bearer <token>" http://127.0.0.1:8787/v1/models` | contains `go/...` | only `free/...`: prefix or switch not applied; HTTP 401: token mismatch |
 | `OPENCODE_GATEWAY_KEY` in `~/.dsh/.env` | equals the gateway `token` | set it, then restart DSH |
 
@@ -143,7 +143,6 @@ Minimal gateway-side config:
       "id": "opencode-go",
       "type": "opencode-go",
       "prefix": "go",
-      "apiKey": "<OpenCode API key; omit to use the local opencode login>",
       "enabled": true
     }
   ]
@@ -156,6 +155,11 @@ Notes:
 - **The first refresh may be empty.** On a cold gateway the listing returns the last good result within 8s and refreshes in the background; refresh again once it lands.
 - A refresh now distinguishes a 200 empty listing from HTTP 401 and timeouts; `no credential resolved from OPENCODE_GATEWAY_KEY` means `.env` is missing the variable.
 - **The free tier is unaffected**: the `OpenCode Free` card never goes through the 8787 gateway.
+
+Two common chat-side errors:
+
+- `403 An active OpenCode Go subscription is required`: the gateway's `opencode-go` key has no Go subscription (the listing may still be fine — the catalog is public). Omit `apiKey` to use the local `opencode auth login` state, or use a subscribed key, then restart the gateway.
+- `Connection error.`: the gateway process is not running — not a key problem. `curl http://127.0.0.1:8787/health` must answer `{"status":"ok"}`.
 
 ## Development
 
