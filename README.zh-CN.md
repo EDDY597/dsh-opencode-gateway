@@ -23,6 +23,7 @@ DeepSeek Harness（DSH）插件：把本机 opencode 生态接进 DSH 的模型�
 - **DSH ≥ 0.1.7-rc.2 且 < 0.3.0-0**（peer 实测范围），已在 **0.2.0-rc.2** 验证
 - 免费档需要本机装有 opencode CLI，建议先 `opencode auth login`（免费账号模型列表与限额更好，匿名也能用）
 - 网关路由需要配套网关 [EDDY597/opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) 在运行（`start-gateway.cmd`、`start-tray-hidden.vbs` 或托盘）
+- 网关路由还要求网关侧 `opencode-go` upstream **已启用且 `prefix` 为 `go`**（网关示例配置已如此），并在 `~/.dsh/.env` 设置 `OPENCODE_GATEWAY_KEY=<网关 token>`。缺任何一项，Go 卡的刷新会明确报「缺凭据 / HTTP 401 / 空列表」，而不是静默失败。
 
 ## 安装
 
@@ -80,11 +81,11 @@ pnpm dsh plugin --profile web add "D:/Agent/dsh-opencode-gateway"
 
 DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两张卡片分别管理 OpenCode Go 与 OpenCode Free 路由的模型菜单。
 
-- **刷新**：向对应端点拉取实时模型列表（OpenCode Go 走网关 `/v1/models`，OpenCode Free 走内联代理的后端 listing）。**Go 卡片只保留 `go/` 前缀的条目**，即网关 `opencode-go` upstream 对官方 `https://opencode.ai/zen/go/v1/models` 的实时读取（实测该前缀与官方端点逐条一致）。网关同一份 listing 还混着两个来源的近似前缀，都**不属于 Go 订阅**、一律排除：`opencode-go/` 是本地 `opencode serve` 后端的目录（经 `local-free` upstream 透传，其 `modelRewrite` 只映射 `opencode/`），`free/` 是同一后端的 Zen 目录（付费模型也在其中）。把 `opencode-go/` 当成 `go/` 的别名拼写是错的——那正是 `opencode-go/step-5-preview-free` 这类官方并未提供的本地条目出现在 Go 卡片上的原因。
+- **刷新**：向对应端点拉取实时模型列表（OpenCode Go 走网关 `/v1/models`，OpenCode Free 走内联代理的后端 listing）。刷新最多等 60 秒；401/超时/网络错误会显示具体原因，只有「200 但列表为空」才显示空列表提示。**Go 卡片只保留 `go/` 前缀的条目**，即网关 `opencode-go` upstream 对官方 `https://opencode.ai/zen/go/v1/models` 的实时读取（实测该前缀与官方端点逐条一致）；因此网关侧该 upstream 的 `prefix` 必须是 `go`（示例配置已如此）。网关同一份 listing 还混着两个来源的近似前缀，都**不属于 Go 订阅**、一律排除：`opencode-go/` 是本地 `opencode serve` 后端的目录（经 `local-free` upstream 透传，其 `modelRewrite` 只映射 `opencode/`），`free/` 是同一后端的 Zen 目录（付费模型也在其中）。把 `opencode-go/` 当成 `go/` 的别名拼写是错的——那正是 `opencode-go/step-5-preview-free` 这类官方并未提供的本地条目出现在 Go 卡片上的原因。
 - **不设静态名单**：菜单成员只由实时 listing 决定。官方新增模型自动出现（如 `go/beam-free`），官方下架的自动消失；`hiddenModels` 仍可作为你在官方集合内额外排除的配置项。**没有任何「已确认不可用」黑名单**——「这个 id 跑不通」是某一刻的实测结论，不是模型的固有属性；写死成名单会既藏住官方新模型，又在官方修好后继续误报。官方列出的模型即便某次请求失败也照原样保留，报错会由网关如实返回。
 - **免费档取 opencode 自己的答案**：`OpenCode Free` 卡片的候选行来自 `opencode models` 的输出（运行时剔除 `OPENCODE_API_KEY`，只取 `opencode/` 前缀），因此与你在 CLI 里看到的免费档**逐条一致**（本机 10 个）。**不要用本地后端的 provider 配置做这件事**：那份视图是「带凭据」的，设了 key 时 `opencode` provider 会把付费目录一起报出来（实测 84 个），按 `cost` 过滤会同时**漏掉**它根本不列的免费模型（`beam-free`、`deepseek-v4.1-flash-free`、`glm-5.3-flash-free`、`nemotron-3.5-super-vl-free`）并**多出**地区受限的条目（`cat-jam-free`、`muse-spark-1.3-contributor-free`）。结果按 10 分钟缓存，且失败时回退上次成功结果，不会因一次 spawn 失败显示成"免费档消失"。
 - **勾选**：勾选的模型进入模型菜单（含输入框芯片）；未勾选的仅在此列出。从 listing 新发现的模型标"发现"。
-- **失效条目清理**：已勾选但某次刷新未再返回的模型会标「不在列表」，**不会被自动移除**。卡片底部的「移除 N 个失效条目」按钮按当前勾选状态一次性剔除它们并保存——这是唯一不经取消勾选就改动菜单的路径，且必须由你点击触发。**防护**：端点返回空列表时不做失效判定（`fetchGatewayListing` 在所有失败路径上都返回 `[]`，无法与"真的没有模型"区分），此时卡片显示故障提示，而不是把整个菜单清空。
+- **失效条目清理**：已勾选但某次刷新未再返回的模型会标「不在列表」，**不会被自动移除**。卡片底部的「移除 N 个失效条目」按钮按当前勾选状态一次性剔除它们并保存——这是唯一不经取消勾选就改动菜单的路径，且必须由你点击触发。**防护**：端点返回空列表时不做失效判定；刷新现在会区分「200 空列表」与「401 / 超时 / 网络失败」，后者显示具体错误，不会把整个菜单清空。
 - **保存勾选**：以修订号围栏的原子写入 settings 页，菜单与输入框芯片即时更新，重启后保留；冲突时整页重载并丢弃暂存。
 - **恢复内置默认**：unset 该路由的 `models`，菜单回到内置清单（组合层 `models` 若配置过则以它为基底）。
 
@@ -94,7 +95,7 @@ DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两�
 
 | 变量 | 说明 |
 | --- | --- |
-| `OPENCODE_GATEWAY_KEY` | 网关 Bearer token；**网关未设 token 时任意非空值即可**（插件要求凭据非空，缺失在发请求前报 `MISSING_CREDENTIAL`） |
+| `OPENCODE_GATEWAY_KEY` | 网关 Bearer token；**网关未设 token 时任意非空值即可**。刷新时缺这个变量会直接报「no credential resolved…」，聊天则在发请求前报 `MISSING_CREDENTIAL` |
 | `OPENCODE_ZEN_API_KEY` | 透传为后端 `OPENCODE_API_KEY` 解锁付费模型；未设时回退读本地 opencode 登录态（v0.1 只读进程环境，不走凭据服务） |
 
 ### `models[]` 条目
@@ -120,6 +121,41 @@ DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两�
 - **`zenApiKeyEnv` 只读进程环境**，暂不解析凭据服务里存的引用。
 - **headless 一次性任务退出滞留**：对照实验（拔掉本插件）同样滞留，属 DSH headless 基座行为，与本插件无关。
 - 两个进程同时 spawn 同一后端端口（10001）存在竞态：spawn 失败会报错，重试即好；先健康检查再 spawn 的顺序已尽量规避。
+
+## 故障排查：Go 卡刷新报「端点返回了空模型列表」
+
+这条提示是安全失败：插件不会改动菜单。按顺序检查下面三项，任意一项不对都会得到空列表。
+
+| 检查 | 正确状态 | 不对时 |
+| --- | --- | --- |
+| 网关 `gateway.config.json` 的 `opencode-go` upstream | `"enabled": true`、`"prefix": "go"`、`apiKey` 不是 `REPLACE_WITH_...` | 按下面模板改，托盘 → 重启服务 |
+| `curl -H "Authorization: Bearer <token>" http://127.0.0.1:8787/v1/models` | 响应里有 `go/...` | 只有 `free/...`：前缀或开关没生效；HTTP 401：token 不对 |
+| `~/.dsh/.env` 的 `OPENCODE_GATEWAY_KEY` | 与网关 `token` 一致 | 写入后重启 DSH |
+
+网关侧最小配置：
+
+```json
+{
+  "port": 8787,
+  "token": "<网关 token>",
+  "upstreams": [
+    {
+      "id": "opencode-go",
+      "type": "opencode-go",
+      "prefix": "go",
+      "apiKey": "<OpenCode API Key；也可删掉这一行改用本机 opencode 登录态>",
+      "enabled": true
+    }
+  ]
+}
+```
+
+补充：
+
+- **Go 卡只认 `go/`。** 网关写成 `prefix: "opencode-go"` 会列出 `opencode-go/...`，插件按设计把它当成本地后端目录丢弃。
+- **第一次刷新可能为空。** 网关冷启动时先返回上次结果（最多等 8 秒），后台读取完成后再次刷新即完整。
+- 刷新现在会区分「200 空列表 / HTTP 401 / 超时」；若看到 `no credential resolved from OPENCODE_GATEWAY_KEY`，就是 `.env` 没配。
+- **免费档与这些无关**：`OpenCode Free` 卡不经过 8787 网关。
 
 ## 开发
 

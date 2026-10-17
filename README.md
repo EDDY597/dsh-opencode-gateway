@@ -23,6 +23,7 @@ By design this plugin ships **no usage panel**; quota display lives in the gatew
 - **DSH ≥ 0.1.7-rc.2 and < 0.3.0-0** (measured peer range); verified on **0.2.0-rc.2**
 - The free tier needs the opencode CLI installed; `opencode auth login` is recommended (better model list and limits, anonymous works too)
 - The gateway route needs the companion gateway [EDDY597/opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) running (`start-gateway.cmd`, `start-tray-hidden.vbs` or the tray)
+- The gateway route also requires the gateway's `opencode-go` upstream to be **enabled with `prefix: "go"`** (the gateway's example config does this) and `OPENCODE_GATEWAY_KEY=<gateway token>` in `~/.dsh/.env`. Missing either one makes the Go card's refresh report "missing credential / HTTP 401 / empty listing" explicitly instead of failing silently.
 
 ## Install
 
@@ -80,11 +81,11 @@ The plugin installs no settings UI; configuration lives in the composition layer
 
 DSH settings gain an **OpenCode Gateway** section (plugin v0.2.0+): one card per route (OpenCode Go / OpenCode Free) managing that route's model menu.
 
-- **Refresh** pulls the live listing (OpenCode Go via the gateway's `/v1/models`, OpenCode Free via the inlined proxy's backend listing). **The Go card keeps only the `go/` prefix** — the gateway's `opencode-go` upstream reading `https://opencode.ai/zen/go/v1/models`, which measured one for one against the official endpoint. That same listing mixes in two other sources under look-alike prefixes, neither of which is the Go subscription, and both are dropped: `opencode-go/` is the local `opencode serve` backend's catalog (passed through by the `local-free` upstream, whose `modelRewrite` maps only `opencode/`), and `free/` is that same backend's Zen catalog, paid models included. Reading `opencode-go/` as an alias spelling of `go/` is what put `opencode-go/step-5-preview-free` — a local entry the official endpoint does not list — on the Go card.
+- **Refresh** pulls the live listing (OpenCode Go via the gateway's `/v1/models`, OpenCode Free via the inlined proxy's backend listing). A refresh waits up to 60s; 401/timeout/network failures report their reason, and only a 200 with an empty list shows the empty-listing notice. **The Go card keeps only the `go/` prefix** — the gateway's `opencode-go` upstream reading `https://opencode.ai/zen/go/v1/models`, which measured one for one against the official endpoint; the gateway-side upstream must therefore use `prefix: "go"` (the example config does). That same listing mixes in two other sources under look-alike prefixes, neither of which is the Go subscription, and both are dropped: `opencode-go/` is the local `opencode serve` backend's catalog (passed through by the `local-free` upstream, whose `modelRewrite` maps only `opencode/`), and `free/` is that same backend's Zen catalog, paid models included. Reading `opencode-go/` as an alias spelling of `go/` is what put `opencode-go/step-5-preview-free` — a local entry the official endpoint does not list — on the Go card.
 - **No frozen list**: menu membership follows the live listing alone. A model the endpoint adds shows up (e.g. `go/beam-free`); one it drops disappears; `hiddenModels` remains available for extra exclusions inside the official set. There is **no confirmed-unavailable blacklist** — "this id cannot serve a turn" is a measurement of one moment, not a property of the model, and freezing it would both hide newly added official models and keep misreporting after the endpoint fixes something. An official id is kept even if a given request fails; the gateway's own error is then reported verbatim.
 - **The free card takes opencode's own answer**: its candidate rows come from `opencode models`, run with `OPENCODE_API_KEY` removed and reduced to the `opencode/` prefix, so they match the free tier you see in the CLI line for line (10 models on this machine). **Do not derive this from the local backend's provider config**: that view is credentialed — with the key set, its `opencode` provider also reports the paid catalog (measured 84 models), and filtering it by `cost` both **missed** free models it does not list at all (`beam-free`, `deepseek-v4.1-flash-free`, `glm-5.3-flash-free`, `nemotron-3.5-super-vl-free`) and **kept** region-blocked ones (`cat-jam-free`, `muse-spark-1.3-contributor-free`). The answer is cached for 10 minutes and falls back to the last good result, so one failed spawn never reads as "the free tier vanished".
 - **Checkboxes** decide what lands in the model menu (composer chip included); newly discovered models are tagged and unchecked.
-- **Stale cleanup**: a checked model a refresh no longer answers is tagged "not listed" and is **never removed on its own**. The card's "Remove N stale" button drops exactly those entries in one save — the only path that changes the menu without unchecking, and always an explicit click. **Guard**: an endpoint that answers with an empty list yields no staleness verdict at all (`fetchGatewayListing` returns `[]` on every failure path, indistinguishable from a genuinely empty catalog), so the card reports a fault instead of clearing the menu.
+- **Stale cleanup**: a checked model a refresh no longer answers is tagged "not listed" and is **never removed on its own**. The card's "Remove N stale" button drops exactly those entries in one save — the only path that changes the menu without unchecking, and always an explicit click. **Guard**: an empty list yields no staleness verdict, and a refresh now distinguishes a 200-with-no-models from a 401/timeout/network failure; the latter shows its own error instead of clearing anything.
 - **Save checked** commits one revision-fenced settings write; the menu and chip update immediately and survive restarts; a conflict reloads the snapshot and drops staging.
 - **Restore defaults** unsets that route's `models` — the menu falls back to the shipped list (or the composition `models`, when configured).
 
@@ -94,7 +95,7 @@ Precedence: saved settings `models` (even an empty array) > composition `cordis.
 
 | Variable | Meaning |
 | --- | --- |
-| `OPENCODE_GATEWAY_KEY` | The gateway's Bearer token; **any non-empty value works while the gateway runs without a token** (a missing credential fails before network I/O with `MISSING_CREDENTIAL`) |
+| `OPENCODE_GATEWAY_KEY` | The gateway's Bearer token; **any non-empty value works while the gateway runs without a token**. A refresh without it reports "no credential resolved…" directly; a chat request fails before network I/O with `MISSING_CREDENTIAL` |
 | `OPENCODE_ZEN_API_KEY` | Passed to the backend as `OPENCODE_API_KEY` to unlock paid models; falls back to the local opencode login state (v0.1 reads the process environment only, not the credentials seam) |
 
 ### `models[]` entries
@@ -120,6 +121,41 @@ Precedence: saved settings `models` (even an empty array) > composition `cordis.
 - **`zenApiKeyEnv` reads the process environment only**; stored credential references are not resolved yet.
 - **Headless one-shot tasks linger on exit**: a control run with this plugin removed lingers the same way — DSH headless base behavior, not this plugin.
 - Two processes racing to spawn the same backend port (10001): a failed spawn surfaces an error and a retry succeeds; health-check-before-spawn mitigates it.
+
+## Troubleshooting: the Go card refresh reports an empty listing
+
+That notice is a safe failure: the menu is never modified. Check these three things in order; any one of them being wrong yields an empty listing.
+
+| Check | Expected | If wrong |
+| --- | --- | --- |
+| The gateway's `opencode-go` upstream in `gateway.config.json` | `"enabled": true`, `"prefix": "go"`, `apiKey` not `REPLACE_WITH_...` | apply the template below, then tray → Restart service |
+| `curl -H "Authorization: Bearer <token>" http://127.0.0.1:8787/v1/models` | contains `go/...` | only `free/...`: prefix or switch not applied; HTTP 401: token mismatch |
+| `OPENCODE_GATEWAY_KEY` in `~/.dsh/.env` | equals the gateway `token` | set it, then restart DSH |
+
+Minimal gateway-side config:
+
+```json
+{
+  "port": 8787,
+  "token": "<gateway token>",
+  "upstreams": [
+    {
+      "id": "opencode-go",
+      "type": "opencode-go",
+      "prefix": "go",
+      "apiKey": "<OpenCode API key; omit to use the local opencode login>",
+      "enabled": true
+    }
+  ]
+}
+```
+
+Notes:
+
+- **The Go card only accepts `go/`.** An upstream with `prefix: "opencode-go"` lists `opencode-go/...`, which the plugin drops as the local backend's catalog by design.
+- **The first refresh may be empty.** On a cold gateway the listing returns the last good result within 8s and refreshes in the background; refresh again once it lands.
+- A refresh now distinguishes a 200 empty listing from HTTP 401 and timeouts; `no credential resolved from OPENCODE_GATEWAY_KEY` means `.env` is missing the variable.
+- **The free tier is unaffected**: the `OpenCode Free` card never goes through the 8787 gateway.
 
 ## Development
 

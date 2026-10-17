@@ -42,7 +42,7 @@ import { startLoopbackServer } from './local/loopback.ts'
 import type { LoopbackServer } from './local/loopback.ts'
 import { resolveOpencodePath } from './local/backend.ts'
 import { listFreeModels } from './free-listing.ts'
-import { fetchGatewayListing } from './discovery.ts'
+import { fetchGatewayListing, fetchGatewayListingDetailed } from './discovery.ts'
 import {
   emptyCredentialStore,
   minimalAuthContext,
@@ -307,13 +307,22 @@ export function apply(ctx: Context, config: ConfigShape): void {
         // are already the proxy's raw wire spelling, so nothing is deduped here.
         return ids.map(id => discoveryRow(enrichFromRegistry({ id }), current.free.displayName))
       }
-      const key = await resolveCredential(ctx, current.gateway.apiKeyEnv).catch(() => undefined)
-      const ids = await fetchGatewayListing(current.gateway.baseURL, key)
+      // The settings refresh is explicit: a missing token must say so instead
+      // of being swallowed into "the endpoint has no models".
+      const key = await resolveCredential(ctx, current.gateway.apiKeyEnv)
+      if (key === undefined) {
+        throw new Error(
+          `no credential resolved from ${current.gateway.apiKeyEnv}; set it in ~/.dsh/.env`
+          + ' to the gateway token (or any non-empty value while the gateway runs without a token)',
+        )
+      }
+      const listing = await fetchGatewayListingDetailed(current.gateway.baseURL, key)
+      if (!listing.ok) throw new Error(listing.message)
       // The gateway aggregates several upstreams, so one listing carries ids
       // from sources that are not the Go subscription under look-alike
       // prefixes; projection keeps the official prefix and drops the rest, so
       // the refresh result is exactly what OpenCode currently offers on Go.
-      return projectGatewayListing(ids, current.gateway)
+      return projectGatewayListing(listing.ids, current.gateway)
         .map(entry => discoveryRow(entry, current.gateway.displayName))
     })
   } catch (error: any) {

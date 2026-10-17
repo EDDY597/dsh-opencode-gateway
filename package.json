@@ -1,7 +1,7 @@
 {
   "name": "dsh-opencode-gateway",
   "description": "OpenCode gateway provider for DeepSeek Harness: one route to the local opencode-api-plugin gateway, one route to an inlined opencode2api local proxy (Zen free tier), with a curated model registry and a model-manager settings page",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

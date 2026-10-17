@@ -20,7 +20,7 @@ export declare const en: {
     readonly discoveredTag: "discovered";
     readonly notInListing: "not listed";
     readonly emptyListing: "No models answered. Refresh once the route is reachable.";
-    readonly suspiciousEmpty: "The endpoint answered with no models at all — that usually means a gateway fault, not that every model is gone. Nothing was removed.";
+    readonly suspiciousEmpty: "The endpoint answered with an empty model list — the existing menu was kept; nothing was removed. Check that this route's upstream is enabled and its credentials are set.";
     readonly pruneStale: "Remove {count} stale";
     readonly pruneHint: "Drops the {count} checked entries the last refresh no longer answered, and saves.";
     readonly pruneNone: "Nothing stale to remove.";

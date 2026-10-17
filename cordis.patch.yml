@@ -1,3 +1,22 @@
 - insert:
   - id: opencode-gateway
     name: dsh-opencode-gateway
+# Defaults are used when no config is given. For the OpenCode Go card, the
+# gateway at http://127.0.0.1:8787/v1 must expose `go/` ids (its `opencode-go`
+# upstream must use `prefix: "go"`), and ~/.dsh/.env must set
+# OPENCODE_GATEWAY_KEY to that gateway's token. The free card needs neither.
+# Uncomment and edit only if you need non-default values:
+#    config:
+#      gateway:
+#        provider: opencode-gateway
+#        displayName: OpenCode Go
+#        baseURL: http://127.0.0.1:8787/v1
+#        apiKeyEnv: OPENCODE_GATEWAY_KEY
+#        hiddenModels: ["free/"]
+#      free:
+#        provider: opencode-free
+#        serverUrl: http://127.0.0.1:10001
+#        proxyPort: 10102
+#        opencodePath: opencode
+#        manageBackend: true
+#        disableTools: true
