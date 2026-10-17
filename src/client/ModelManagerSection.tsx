@@ -13,7 +13,7 @@ import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LlmDiscoveredModel, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { RouteModel } from '../config.ts'
 import type { RouteKey, RowState } from './rows.ts'
-import { assembleRows, effectiveModelsOf, resetOp, saveOp } from './rows.ts'
+import { assembleRows, effectiveModelsOf, resetOp, saveOp, staleCheckedIds } from './rows.ts'
 import type { ModelManagerOperations, SettingsWriteOutcome } from './operations.ts'
 import type { en } from './locales.ts'
 
@@ -68,7 +68,7 @@ function providerOf(view: SettingsNamespaceView | undefined, routeKey: RouteKey,
 }
 
 /** One card's checkbox state, driven from the described view + its probe. */
-function Card({ routeKey, spec, view, probe, checked, staged, busy, t, onToggle, onRefresh, onSave, onReset }: {
+function Card({ routeKey, spec, view, probe, checked, staged, busy, t, onToggle, onRefresh, onSave, onReset, onPrune }: {
   routeKey: RouteKey
   spec: RouteSpec
   view?: SettingsNamespaceView
@@ -81,11 +81,15 @@ function Card({ routeKey, spec, view, probe, checked, staged, busy, t, onToggle,
   onRefresh: () => void
   onSave: () => void
   onReset: () => void
+  onPrune: (ids: readonly string[]) => void
 }) {
   const provider = providerOf(view, routeKey, routeKey === 'gateway' ? 'opencode-gateway' : 'opencode-free')
   const effective = effectiveModelsOf(view?.value as Record<string, unknown> | undefined, routeKey, spec.shipped)
   const discovered = probe.phase === 'ready' ? probe.models : undefined
   const rows: readonly RowState[] = assembleRows({ effective, shipped: spec.shipped, discovered })
+  const stale = staleCheckedIds(rows, checked, discovered)
+  // An empty answer is reported as a fault, never as "everything went stale".
+  const emptyAnswer = probe.phase === 'ready' && discovered !== undefined && discovered.length === 0
   const probeLabel = probe.phase === 'loading'
     ? t('refreshing')
     : probe.phase === 'error'
@@ -102,6 +106,7 @@ function Card({ routeKey, spec, view, probe, checked, staged, busy, t, onToggle,
         </button>
       </div>
       {probeLabel !== undefined && probe.phase === 'error' ? <div className="ocgw-error">{probeLabel}</div> : undefined}
+      {emptyAnswer ? <div className="ocgw-error">{t('suspiciousEmpty')}</div> : undefined}
       <div className="ocgw-rows">
         {rows.length === 0 ? <div className="ocgw-empty">{t('emptyListing')}</div> : rows.map(row => (
           <label key={row.entry.id} className={`ocgw-row${row.enabled ? '' : ' ocgw-row-disabled'}`}>
@@ -126,6 +131,15 @@ function Card({ routeKey, spec, view, probe, checked, staged, busy, t, onToggle,
         <span>{t('uncheckedCount', { count: checked.size })}</span>
         {staged ? <span className="ocgw-tag">{t('stagedHint')}</span> : undefined}
         <span className="ocgw-spacer" />
+        <button
+          type="button"
+          className="ocgw-button"
+          disabled={busy || stale.length === 0}
+          title={stale.length === 0 ? t('pruneNone') : t('pruneHint', { count: stale.length })}
+          onClick={() => onPrune(stale)}
+        >
+          {t('pruneStale', { count: stale.length })}
+        </button>
         <button type="button" className="ocgw-button" disabled={busy} onClick={onReset}>{t('resetDefaults')}</button>
         <button type="button" className="ocgw-button ocgw-button-primary" disabled={busy || !staged} onClick={onSave}>
           {busy ? t('saving') : t('save')}
@@ -206,18 +220,24 @@ export function ModelManagerSection(props: ModelManagerSectionProps) {
     setStaged(current => ({ ...current, [routeKey]: true }))
   }
 
+  /** One route's discovered listing, when its probe has answered. */
+  const discoveredOf = (routeKey: RouteKey): readonly LlmDiscoveredModel[] | undefined => {
+    const probe = probes[routeKey]
+    return probe?.phase === 'ready' ? probe.models : undefined
+  }
+
+  /** One route's rows as the card renders them. */
+  const rowsOf = (spec: RouteSpec): readonly RowState[] => assembleRows({
+    effective: effectiveModelsOf(page.view?.value as Record<string, unknown> | undefined, spec.key, spec.shipped),
+    shipped: spec.shipped,
+    discovered: discoveredOf(spec.key),
+  })
+
   const save = (): void => {
     const pending = routes.filter(spec => staged[spec.key] === true)
     if (pending.length === 0) return
     setBusy(true)
-    const ops = pending.map((spec) => {
-      const probe = probes[spec.key]
-      return saveOp(spec.key, assembleRows({
-        effective: effectiveModelsOf(page.view?.value as Record<string, unknown> | undefined, spec.key, spec.shipped),
-        shipped: spec.shipped,
-        discovered: probe?.phase === 'ready' ? probe.models : undefined,
-      }), checked[spec.key] ?? new Set())
-    })
+    const ops = pending.map(spec => saveOp(spec.key, rowsOf(spec), checked[spec.key] ?? new Set()))
     void operations.writeSettings(ops, revision).then((outcome: SettingsWriteOutcome) => {
       setBusy(false)
       if (outcome.kind === 'written') {
@@ -264,6 +284,40 @@ export function ModelManagerSection(props: ModelManagerSectionProps) {
     })
   }
 
+  /**
+   * Drop the checked entries a trustworthy refresh no longer answers, as one
+   * revision-fenced write. This is the only path that removes a model from the
+   * menu without the user unchecking it, and it is always an explicit click:
+   * the ids come from the same row assembly the card renders, and the caller
+   * only offers them once a non-empty listing has answered.
+   */
+  const prune = (routeKey: RouteKey, ids: readonly string[]): void => {
+    if (ids.length === 0) return
+    const spec = routes.find(candidate => candidate.key === routeKey)
+    if (spec === undefined) return
+    const drop = new Set(ids)
+    const next = new Set([...(checked[routeKey] ?? new Set<string>())].filter(id => !drop.has(id)))
+    setBusy(true)
+    void operations.writeSettings([saveOp(routeKey, rowsOf(spec), next)], revision).then((outcome: SettingsWriteOutcome) => {
+      setBusy(false)
+      if (outcome.kind === 'written') {
+        setPage({ phase: 'ready', view: outcome.view })
+        setChecked(seedFrom(outcome.view))
+        setStaged(current => ({ ...current, [routeKey]: false }))
+        return
+      }
+      if (outcome.kind === 'conflict') {
+        setStaged({})
+        void operations.describeSettings().then((view) => {
+          setPage({ phase: 'ready', view })
+          setChecked(seedFrom(view))
+        })
+        return
+      }
+      setPage({ phase: 'error', error: t('writeRefused', { message: outcome.message }) })
+    })
+  }
+
   return (
     <div className="ocgw-section">
       <div className="ocgw-card-title">{copy.title}</div>
@@ -284,6 +338,7 @@ export function ModelManagerSection(props: ModelManagerSectionProps) {
           onRefresh={() => refresh(spec.key)}
           onSave={save}
           onReset={() => reset(spec.key)}
+          onPrune={(ids) => prune(spec.key, ids)}
         />
       )) : undefined}
     </div>

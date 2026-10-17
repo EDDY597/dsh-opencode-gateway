@@ -56,6 +56,28 @@ export declare function discoveredEntry(model: LlmDiscoveredModel): RouteModel;
  * @returns the path op committing this route's menu.
  */
 export declare function saveOp(routeKey: RouteKey, rows: readonly RowState[], checked: ReadonlySet<string>): SettingsPathOpView;
+/**
+ * Whether a refresh result may be trusted to judge staleness at all.
+ *
+ * An endpoint that answers with an empty list is indistinguishable from one
+ * that is merely broken — `fetchGatewayListing` returns `[]` on every failure
+ * path (unreachable, non-200, unreadable, oversized, unparseable). Treating
+ * "no rows answered" as "every model is gone" would let one gateway fault
+ * strip the whole menu, so an empty listing yields no verdict.
+ * @param discovered - the latest live listing, or undefined before any refresh.
+ * @returns true only when a non-empty listing actually answered.
+ */
+export declare function listingIsAuthoritative(discovered: readonly LlmDiscoveredModel[] | undefined): boolean;
+/**
+ * The checked ids a refresh no longer answers — the entries a one-click clean
+ * would drop. Empty whenever {@link listingIsAuthoritative} says no verdict is
+ * available, so a failed refresh can never nominate the whole menu.
+ * @param rows - the route's assembled rows.
+ * @param checked - the ids the user currently has checked.
+ * @param discovered - the latest live listing, or undefined.
+ * @returns the checked ids missing from a trustworthy listing.
+ */
+export declare function staleCheckedIds(rows: readonly RowState[], checked: ReadonlySet<string>, discovered: readonly LlmDiscoveredModel[] | undefined): string[];
 /** The one settings write that hands a route's menu back to the defaults. */
 export declare function resetOp(routeKey: RouteKey): SettingsPathOpView;
 /** The route's effective models out of one described namespace view. */

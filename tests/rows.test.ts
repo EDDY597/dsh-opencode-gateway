@@ -3,7 +3,7 @@ import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-api-remotes/client'
 import { GATEWAY_DEFAULT_MODELS } from '../src/default-models.ts'
 import type { RouteModel } from '../src/config.ts'
 import type { RouteRowsInput } from '../src/client/rows.ts'
-import { assembleRows, discoveredEntry, effectiveModelsOf, resetOp, saveOp } from '../src/client/rows.ts'
+import { assembleRows, discoveredEntry, effectiveModelsOf, listingIsAuthoritative, resetOp, saveOp, staleCheckedIds } from '../src/client/rows.ts'
 
 const shipped = GATEWAY_DEFAULT_MODELS
 
@@ -59,6 +59,48 @@ describe('staleness after a refresh', () => {
 
   it('every row is in-listing while no refresh has answered', () => {
     expect(assembleRows(input()).every(row => row.inListing)).toBe(true)
+  })
+})
+
+describe('staleCheckedIds (the one-click clean)', () => {
+  const checkedAll = () => new Set(shipped.map(entry => entry.id))
+
+  it('nominates checked models the fresh listing no longer answers', () => {
+    const discovered: LlmDiscoveredModel[] = shipped
+      .filter(entry => entry.id !== 'go/kimi-k3')
+      .map(entry => ({ id: entry.id }))
+    const rows = assembleRows(input({ discovered }))
+    expect(staleCheckedIds(rows, checkedAll(), discovered)).toEqual(['go/kimi-k3'])
+  })
+
+  it('never nominates anything when the endpoint answered with no models at all', () => {
+    // fetchGatewayListing returns [] on every failure path, so an empty answer
+    // is indistinguishable from a broken gateway. Treating it as "all gone"
+    // would let one fault wipe the menu.
+    const rows = assembleRows(input({ discovered: [] }))
+    expect(staleCheckedIds(rows, checkedAll(), [])).toEqual([])
+  })
+
+  it('never nominates anything before a first refresh', () => {
+    const rows = assembleRows(input())
+    expect(staleCheckedIds(rows, checkedAll(), undefined)).toEqual([])
+  })
+
+  it('ignores unchecked models that went stale', () => {
+    const discovered: LlmDiscoveredModel[] = [{ id: shipped[0]!.id }]
+    const rows = assembleRows(input({ discovered }))
+    expect(staleCheckedIds(rows, new Set([shipped[0]!.id]), discovered)).toEqual([])
+  })
+})
+
+describe('listingIsAuthoritative', () => {
+  it('is false for no refresh and for an empty answer', () => {
+    expect(listingIsAuthoritative(undefined)).toBe(false)
+    expect(listingIsAuthoritative([])).toBe(false)
+  })
+
+  it('is true once a non-empty listing answers', () => {
+    expect(listingIsAuthoritative([{ id: 'go/one' }])).toBe(true)
   })
 })
 
