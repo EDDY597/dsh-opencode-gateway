@@ -5,7 +5,7 @@ import {
   gatewayProfile,
   freeProfile,
 } from '../src/routes.ts'
-import { GO_REFUSED_MODEL_IDS, reasoningEffortsFor, lookupEntry } from '../src/registry.ts'
+import { GO_OFFICIAL_PREFIXES, reasoningEffortsFor, lookupEntry } from '../src/registry.ts'
 import { GATEWAY_DEFAULT_MODELS, FREE_DEFAULT_MODELS } from '../src/default-models.ts'
 
 function gatewayOf(overrides: Partial<ReturnType<typeof resolveConfig>['gateway']> = {}) {
@@ -14,24 +14,40 @@ function gatewayOf(overrides: Partial<ReturnType<typeof resolveConfig>['gateway'
 }
 
 describe('projectGatewayListing', () => {
-  it('dedups ids sharing a bare model and prefers the go/ spelling', () => {
+  it('accepts the official Go prefix and nothing else', () => {
+    // The gateway aggregates three sources under look-alike prefixes; only
+    // `go/` is the official Go subscription endpoint's catalog.
     const gateway = gatewayOf({ hiddenModels: [] })
-    const ids = ['opencode-go/deepseek-v4.1-flash', 'go/deepseek-v4.1-flash']
-    const projected = projectGatewayListing(ids, gateway)
-    expect(projected).toHaveLength(1)
-    expect(projected[0]?.id).toBe('go/deepseek-v4.1-flash')
-  })
-
-  it('hides configured prefixes', () => {
-    const gateway = gatewayOf({})
-    const projected = projectGatewayListing(['free/space-bunny-free', 'go/kimi-k3'], gateway)
+    const listed = [
+      'go/kimi-k3',
+      'opencode-go/kimi-k3', // the LOCAL opencode backend's catalog
+      'opencode-go/step-5-preview-free', // present locally, absent officially
+      'free/space-bunny-free', // the local backend's Zen catalog
+      'beam-free', // no prefix at all
+    ]
+    const projected = projectGatewayListing(listed, gateway)
     expect(projected.map(entry => entry.id)).toEqual(['go/kimi-k3'])
   })
 
-  it('hides refused ids even when listed', () => {
+  it('treats the official prefix list as the only membership rule', () => {
+    expect(GO_OFFICIAL_PREFIXES).toEqual(['go'])
     const gateway = gatewayOf({ hiddenModels: [] })
-    const refused = GO_REFUSED_MODEL_IDS[0]
-    const projected = projectGatewayListing([`go/${refused}`, 'go/kimi-k3'], gateway)
+    const projected = projectGatewayListing(['go/anything-at-all'], gateway)
+    expect(projected.map(entry => entry.id)).toEqual(['go/anything-at-all'])
+  })
+
+  it('keeps an official id the endpoint lists even when a turn may fail', () => {
+    // `minimax-m2.7` is on the official list but has answered "Model access is
+    // disabled" in testing. Membership follows the live listing, not a frozen
+    // verdict: a measured failure is a fact about one moment.
+    const gateway = gatewayOf({ hiddenModels: [] })
+    const projected = projectGatewayListing(['go/minimax-m2.7', 'go/kimi-k6'], gateway)
+    expect(projected.map(entry => entry.id)).toEqual(['go/minimax-m2.7', 'go/kimi-k6'])
+  })
+
+  it('hides configured prefixes inside the official set', () => {
+    const gateway = gatewayOf({ hiddenModels: ['go/space-'] })
+    const projected = projectGatewayListing(['go/space-bunny', 'go/kimi-k3'], gateway)
     expect(projected.map(entry => entry.id)).toEqual(['go/kimi-k3'])
   })
 
@@ -50,6 +66,35 @@ describe('projectGatewayListing', () => {
     expect(projected[0]?.id).toBe('go/brand-new-model')
     expect(projected[0]?.name).toBeUndefined()
     expect(projected[0]?.reasoningEfforts).toBeUndefined()
+  })
+
+  it('the settings-page refresh sees the official menu', () => {
+    const gateway = gatewayOf({})
+    const listed = [
+      'go/deepseek-v4.1-flash',
+      'opencode-go/deepseek-v4.1-flash', // local backend's catalog
+      'go/minimax-m2.7', // officially listed, even though a turn may fail
+      'opencode-go/minimax-m2.7', // local backend's copy
+      'free/big-pickle', // the Zen catalog has its own card
+      'go/kimi-k3',
+      'opencode-go/kimi-k3',
+      'opencode-go/step-5-preview-free', // local-only id, not officially listed
+    ]
+    const projected = projectGatewayListing(listed, gateway)
+    expect(projected.map(entry => entry.id)).toEqual(['go/deepseek-v4.1-flash', 'go/minimax-m2.7', 'go/kimi-k3'])
+  })
+})
+
+describe('discoveryRow facts', () => {
+  it('carries the projected entry verbatim, labeled group/bare-id', () => {
+    const gateway = gatewayOf({ hiddenModels: [] })
+    const [entry] = projectGatewayListing(['go/deepseek-v4.1-flash'], gateway)
+    expect(entry).toBeDefined()
+    // discoveryRow is a pure relabel over the projected entry, so every fact the
+    // registry resolved survives to the settings page.
+    expect(entry!.contextWindow).toBe(1_000_000)
+    expect(entry!.input).toEqual(['text', 'image'])
+    expect(entry!.reasoningEfforts).toMatchObject({ off: 'none', max: 'max' })
   })
 })
 
@@ -125,7 +170,7 @@ describe('route profiles', () => {
     const profile = freeProfile(resolved.free, [])
     const models = profile.piProvider?.getModels?.() ?? []
     expect(models.map(model => model.id)).toEqual(FREE_DEFAULT_MODELS.map(entry => entry.id))
-    expect(models[0]?.name).toBe('OpenCode Free/big-pickle')
+    expect(models.some(model => model.name === 'OpenCode Free/big-pickle')).toBe(true)
   })
 
   it('free profile: live listing merges only when discoverModels is on', () => {
@@ -137,7 +182,7 @@ describe('route profiles', () => {
     const profileOn = freeProfile(on.free, ['opencode/extra-model'])
     const models = profileOn.piProvider?.getModels?.() ?? []
     expect(models.some(model => model.id === 'opencode/extra-model')).toBe(true)
-    expect(models[0]?.id).toBe('opencode/big-pickle')
+    expect(models.some(model => model.id === 'opencode/big-pickle')).toBe(true)
   })
 
   it('free profile: explicit models override everything', () => {

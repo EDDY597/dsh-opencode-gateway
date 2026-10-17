@@ -80,8 +80,11 @@ pnpm dsh plugin --profile web add "D:/Agent/dsh-opencode-gateway"
 
 DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两张卡片分别管理 OpenCode Go 与 OpenCode Free 路由的模型菜单。
 
-- **刷新**：向对应端点拉取实时模型列表（OpenCode Go 走网关 `/v1/models`，OpenCode Free 走内联代理的后端 listing）。
+- **刷新**：向对应端点拉取实时模型列表（OpenCode Go 走网关 `/v1/models`，OpenCode Free 走内联代理的后端 listing）。**Go 卡片只保留 `go/` 前缀的条目**，即网关 `opencode-go` upstream 对官方 `https://opencode.ai/zen/go/v1/models` 的实时读取（实测该前缀与官方端点逐条一致）。网关同一份 listing 还混着两个来源的近似前缀，都**不属于 Go 订阅**、一律排除：`opencode-go/` 是本地 `opencode serve` 后端的目录（经 `local-free` upstream 透传，其 `modelRewrite` 只映射 `opencode/`），`free/` 是同一后端的 Zen 目录（付费模型也在其中）。把 `opencode-go/` 当成 `go/` 的别名拼写是错的——那正是 `opencode-go/step-5-preview-free` 这类官方并未提供的本地条目出现在 Go 卡片上的原因。
+- **不设静态名单**：菜单成员只由实时 listing 决定。官方新增模型自动出现（如 `go/beam-free`），官方下架的自动消失；`hiddenModels` 仍可作为你在官方集合内额外排除的配置项。**没有任何「已确认不可用」黑名单**——「这个 id 跑不通」是某一刻的实测结论，不是模型的固有属性；写死成名单会既藏住官方新模型，又在官方修好后继续误报。官方列出的模型即便某次请求失败也照原样保留，报错会由网关如实返回。
+- **免费档取 opencode 自己的答案**：`OpenCode Free` 卡片的候选行来自 `opencode models` 的输出（运行时剔除 `OPENCODE_API_KEY`，只取 `opencode/` 前缀），因此与你在 CLI 里看到的免费档**逐条一致**（本机 10 个）。**不要用本地后端的 provider 配置做这件事**：那份视图是「带凭据」的，设了 key 时 `opencode` provider 会把付费目录一起报出来（实测 84 个），按 `cost` 过滤会同时**漏掉**它根本不列的免费模型（`beam-free`、`deepseek-v4.1-flash-free`、`glm-5.3-flash-free`、`nemotron-3.5-super-vl-free`）并**多出**地区受限的条目（`cat-jam-free`、`muse-spark-1.3-contributor-free`）。结果按 10 分钟缓存，且失败时回退上次成功结果，不会因一次 spawn 失败显示成"免费档消失"。
 - **勾选**：勾选的模型进入模型菜单（含输入框芯片）；未勾选的仅在此列出。从 listing 新发现的模型标"发现"。
+- **失效条目清理**：已勾选但某次刷新未再返回的模型会标「不在列表」，**不会被自动移除**。卡片底部的「移除 N 个失效条目」按钮按当前勾选状态一次性剔除它们并保存——这是唯一不经取消勾选就改动菜单的路径，且必须由你点击触发。**防护**：端点返回空列表时不做失效判定（`fetchGatewayListing` 在所有失败路径上都返回 `[]`，无法与"真的没有模型"区分），此时卡片显示故障提示，而不是把整个菜单清空。
 - **保存勾选**：以修订号围栏的原子写入 settings 页，菜单与输入框芯片即时更新，重启后保留；冲突时整页重载并丢弃暂存。
 - **恢复内置默认**：unset 该路由的 `models`，菜单回到内置清单（组合层 `models` 若配置过则以它为基底）。
 

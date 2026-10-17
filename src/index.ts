@@ -35,11 +35,13 @@ import type {
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import { resolveConfig, readSection } from './config.ts'
-import type { Config as ConfigShape, ResolvedConfig } from './config.ts'
+import type { Config as ConfigShape, ResolvedConfig, RouteModel } from './config.ts'
 import { createLocalProxy, normalizeLocalProxyConfig } from './local/local-proxy.ts'
 import type { LocalProxy } from './local/local-proxy.ts'
 import { startLoopbackServer } from './local/loopback.ts'
 import type { LoopbackServer } from './local/loopback.ts'
+import { resolveOpencodePath } from './local/backend.ts'
+import { listFreeModels } from './free-listing.ts'
 import { fetchGatewayListing } from './discovery.ts'
 import {
   emptyCredentialStore,
@@ -47,15 +49,16 @@ import {
   readLocalOpencodeKey,
   resolveCredential,
 } from './credentials.ts'
-import { gatewayProfile, freeProfile } from './routes.ts'
-import { bareModelId, lookupEntry } from './registry.ts'
+import { gatewayProfile, freeProfile, projectGatewayListing, enrichFromRegistry } from './routes.ts'
+import { bareModelId } from './registry.ts'
 
 export { Config, DEFAULT_CONFIG, readSection } from './config.ts'
 export type { GatewayConfig, FreeConfig, ResolvedConfig, RouteModel } from './config.ts'
 export { fetchGatewayListing } from './discovery.ts'
 export { emptyCredentialStore, minimalAuthContext, readLocalOpencodeKey, resolveCredential } from './credentials.ts'
 export { enrichFromRegistry, freeProfile, gatewayProfile, projectGatewayListing } from './routes.ts'
-export { GO_REFUSED_MODEL_IDS, GO_REGISTRY, FREE_SEED, reasoningEffortsFor } from './registry.ts'
+export { GO_OFFICIAL_PREFIXES, GO_REGISTRY, reasoningEffortsFor } from './registry.ts'
+export { listFreeModels, parseFreeModelIds, resetFreeListingCache } from './free-listing.ts'
 export { GATEWAY_DEFAULT_MODELS, FREE_DEFAULT_MODELS } from './default-models.ts'
 
 /** Cordis plugin name; also the log and error-message prefix, the discovery key, and the settings form namespace. */
@@ -296,18 +299,22 @@ export function apply(ctx: Context, config: ConfigShape): void {
     ctx.llm.registerModelDiscovery(name, async (request: LlmModelDiscoveryRequest): Promise<readonly LlmDiscoveredModel[]> => {
       const current = options()
       if (request.provider === current.free.provider) {
-        const ids = freeRuntime?.serverReady === true
-          ? await freeRuntime.proxy.listModels().catch(() => [] as string[])
-          : []
-        return ids.map(id => discoveryRow(id, current.free.displayName))
+        // opencode's own answer, not the backend's credentialed provider view:
+        // only the former is the free tier (see ./free-listing.ts). It needs no
+        // healthy backend, so the card can list free models before one is up.
+        const ids = await listFreeModels({ opencodePath: resolveOpencodePath(current.free.opencodePath).path ?? current.free.opencodePath })
+        // Same registry enrichment the gateway branch gets; the free tier's ids
+        // are already the proxy's raw wire spelling, so nothing is deduped here.
+        return ids.map(id => discoveryRow(enrichFromRegistry({ id }), current.free.displayName))
       }
       const key = await resolveCredential(ctx, current.gateway.apiKeyEnv).catch(() => undefined)
       const ids = await fetchGatewayListing(current.gateway.baseURL, key)
-      // The gateway aggregates every upstream, free tier included; the Go card
-      // offers only what the route's own prefixes allow (default: the
-      // subscription family — the free tier has its own card).
-      const allowed = ids.filter(id => !current.gateway.hiddenModels.some(prefix => id.startsWith(prefix)))
-      return allowed.map(id => discoveryRow(id, current.gateway.displayName))
+      // The gateway aggregates several upstreams, so one listing carries ids
+      // from sources that are not the Go subscription under look-alike
+      // prefixes; projection keeps the official prefix and drops the rest, so
+      // the refresh result is exactly what OpenCode currently offers on Go.
+      return projectGatewayListing(ids, current.gateway)
+        .map(entry => discoveryRow(entry, current.gateway.displayName))
     })
   } catch (error: any) {
     ctx.logger?.warn?.(`opencode-gateway: model discovery not (re)registered: ${error?.message ?? error}`)
@@ -320,9 +327,8 @@ export function apply(ctx: Context, config: ConfigShape): void {
     const current = options()
     const key = await resolveCredential(ctx, current.gateway.apiKeyEnv).catch(() => undefined)
     const gatewayNext = await fetchGatewayListing(current.gateway.baseURL, key)
-    const freeNext = freeRuntime?.serverReady === true
-      ? await freeRuntime.proxy.listModels().catch(() => [] as string[])
-      : []
+    // Same source the card's refresh reads, so the poll cannot disagree with it.
+    const freeNext = await listFreeModels({ opencodePath: resolveOpencodePath(current.free.opencodePath).path ?? current.free.opencodePath })
     const changed = !sameList(gatewayNext, gatewayListing) || !sameList(freeNext, freeListing)
     gatewayListing = gatewayNext
     freeListing = freeNext
@@ -361,18 +367,19 @@ export function apply(ctx: Context, config: ConfigShape): void {
 }
 
 /**
- * One listing id as the settings page renders it: registry-enriched facts,
- * labeled `<group>/<bare id>` so the page rows, the menu and the composer
- * chip all read the same way.
+ * One projected route entry as the settings page renders it: the entry's own
+ * registry-enriched facts, labeled `<group>/<bare id>` so the page rows, the
+ * menu and the composer chip all read the same way. Projection already resolved
+ * the facts, so nothing is looked up again here.
  */
-function discoveryRow(id: string, groupLabel: string): LlmDiscoveredModel {
-  const bare = bareModelId(id)
-  const known = lookupEntry(bare)
+function discoveryRow(entry: RouteModel, groupLabel: string): LlmDiscoveredModel {
+  const bare = bareModelId(entry.id)
   return {
-    id,
+    id: entry.id,
     name: `${groupLabel}/${bare}`,
-    ...(known?.contextWindow === undefined ? {} : { contextWindow: known.contextWindow }),
-    ...(known?.vision === true ? { inputModalities: ['text', 'image'] as const } : {}),
+    ...(entry.contextWindow === undefined ? {} : { contextWindow: entry.contextWindow }),
+    ...(entry.maxTokens === undefined ? {} : { maxTokens: entry.maxTokens }),
+    ...(entry.input === undefined ? {} : { inputModalities: [...entry.input] }),
   }
 }
 

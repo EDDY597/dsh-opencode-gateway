@@ -2327,11 +2327,16 @@ export function createLocalProxy(config: LocalProxyConfig): LocalProxy {
     id: config.id,
     async listModels() {
       try {
+        // The backend's own catalog, as this proxy sees it. Which of these the
+        // free route may offer is a routing decision, not the proxy's: the
+        // free card reads opencode's own free-tier answer instead (see
+        // ../free-listing.ts).
         const models = buildModelsList(await getProvidersList())
         return models.map((m) => m.id)
       } catch (error: any) {
         console.error("[Local] Model Fetch Error:", error.message)
-        return ["opencode/kimi-k2.5-free"]
+        // Last-resort seed while the backend listing is unavailable.
+        return ["opencode/big-pickle"]
       }
     },
     handleChat,

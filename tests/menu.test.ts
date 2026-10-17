@@ -67,7 +67,9 @@ describe('settings-driven menu', () => {
 
   it('entry names read Group/bare-id for the composer chip', () => {
     expect(GATEWAY_DEFAULT_MODELS[0]?.name).toBe('OpenCode Go/deepseek-v4.1-flash')
-    expect(FREE_DEFAULT_MODELS[0]?.name).toBe('OpenCode Free/big-pickle')
+    expect(FREE_DEFAULT_MODELS[0]?.name).toBe('OpenCode Free/beam-free')
+    expect(FREE_DEFAULT_MODELS.every(entry => entry.name?.startsWith('OpenCode Free/'))).toBe(true)
+    expect(FREE_DEFAULT_MODELS.some(entry => entry.name === 'OpenCode Free/big-pickle')).toBe(true)
   })
 })
 

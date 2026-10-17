@@ -13,9 +13,14 @@
 import type { ResolvedPiAiProviderProfile, PiAiModality } from '@deepseek-ai/dsh-llm-pi-ai';
 import type { ResolvedConfig, RouteModel } from './config.ts';
 /**
- * Project a live gateway listing through the curated registry: dedup ids that
- * share a bare model, hide configured prefixes and refused ids, enrich known
- * models with display names, windows and effort vocabularies.
+ * Project a live gateway listing down to the official Go catalog.
+ *
+ * The gateway aggregates several upstreams, so its listing carries ids from
+ * sources that are NOT the Go subscription under look-alike prefixes (see
+ * {@link GO_OFFICIAL_PREFIXES}). Membership is decided by that whitelist
+ * alone: an id the endpoint no longer lists disappears and one it newly lists
+ * appears, with no frozen list in between. Surviving ids are deduped by bare
+ * model and enriched with the curated registry's metadata.
  * @param listingIds - ids the gateway's `/v1/models` answered.
  * @param gateway - the resolved gateway route config.
  * @returns menu entries in listing order, curated metadata applied.

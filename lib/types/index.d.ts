@@ -28,7 +28,8 @@ export type { GatewayConfig, FreeConfig, ResolvedConfig, RouteModel } from './co
 export { fetchGatewayListing } from './discovery.ts';
 export { emptyCredentialStore, minimalAuthContext, readLocalOpencodeKey, resolveCredential } from './credentials.ts';
 export { enrichFromRegistry, freeProfile, gatewayProfile, projectGatewayListing } from './routes.ts';
-export { GO_REFUSED_MODEL_IDS, GO_REGISTRY, FREE_SEED, reasoningEffortsFor } from './registry.ts';
+export { GO_OFFICIAL_PREFIXES, GO_REGISTRY, reasoningEffortsFor } from './registry.ts';
+export { listFreeModels, parseFreeModelIds, resetFreeListingCache } from './free-listing.ts';
 export { GATEWAY_DEFAULT_MODELS, FREE_DEFAULT_MODELS } from './default-models.ts';
 /** Cordis plugin name; also the log and error-message prefix, the discovery key, and the settings form namespace. */
 export declare const name = "opencode-gateway";

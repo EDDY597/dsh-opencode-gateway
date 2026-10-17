@@ -20,8 +20,7 @@ import type { ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { ResolvedConfig, RouteModel } from './config.ts'
 import { GATEWAY_DEFAULT_MODELS, FREE_DEFAULT_MODELS } from './default-models.ts'
 import {
-  GO_REFUSED_MODEL_IDS,
-  GO_ROUTE_PREFIXES,
+  GO_OFFICIAL_PREFIXES,
   bareModelId,
   lookupEntry,
   prettifyId,
@@ -31,16 +30,21 @@ import {
 const NO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
-/** Rank of a routing prefix; lower wins when one bare id is listed twice. */
+/** Rank of an official prefix; lower wins when one bare id is listed twice. */
 function prefixRank(prefix: string): number {
-  const index = GO_ROUTE_PREFIXES.indexOf(prefix)
+  const index = GO_OFFICIAL_PREFIXES.indexOf(prefix)
   return index === -1 ? Number.MAX_SAFE_INTEGER : index
 }
 
 /**
- * Project a live gateway listing through the curated registry: dedup ids that
- * share a bare model, hide configured prefixes and refused ids, enrich known
- * models with display names, windows and effort vocabularies.
+ * Project a live gateway listing down to the official Go catalog.
+ *
+ * The gateway aggregates several upstreams, so its listing carries ids from
+ * sources that are NOT the Go subscription under look-alike prefixes (see
+ * {@link GO_OFFICIAL_PREFIXES}). Membership is decided by that whitelist
+ * alone: an id the endpoint no longer lists disappears and one it newly lists
+ * appears, with no frozen list in between. Surviving ids are deduped by bare
+ * model and enriched with the curated registry's metadata.
  * @param listingIds - ids the gateway's `/v1/models` answered.
  * @param gateway - the resolved gateway route config.
  * @returns menu entries in listing order, curated metadata applied.
@@ -48,17 +52,20 @@ function prefixRank(prefix: string): number {
 export function projectGatewayListing(listingIds: readonly string[], gateway: ResolvedConfig['gateway']): RouteModel[] {
   const chosen = new Map<string, { wireId: string; rank: number }>()
   for (const listingId of listingIds) {
-    if (gateway.hiddenModels.some(prefix => listingId.startsWith(prefix))) continue
-    const bare = bareModelId(listingId)
+    const slash = listingId.indexOf('/')
+    // An id with no prefix cannot come from the official Go upstream.
+    if (slash <= 0) continue
+    const prefix = listingId.slice(0, slash)
+    const bare = listingId.slice(slash + 1)
     if (bare.length === 0) continue
-    const prefix = listingId.slice(0, listingId.length - bare.length - 1)
+    if (!GO_OFFICIAL_PREFIXES.includes(prefix)) continue
+    if (gateway.hiddenModels.some(hidden => listingId.startsWith(hidden))) continue
     const existing = chosen.get(bare)
     const rank = prefixRank(prefix)
     if (existing === undefined || rank < existing.rank) chosen.set(bare, { wireId: listingId, rank })
   }
   const projected: RouteModel[] = []
   for (const [bare, { wireId }] of chosen) {
-    if (GO_REFUSED_MODEL_IDS.includes(bare)) continue
     const entry = lookupEntry(bare)
     projected.push({
       id: wireId,
