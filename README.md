@@ -152,6 +152,7 @@ Minimal gateway-side config:
 Notes:
 
 - **The Go card only accepts `go/`.** An upstream with `prefix: "opencode-go"` lists `opencode-go/...`, which the plugin drops as the local backend's catalog by design.
+- **The key is not in the plugin.** With no `apiKey` the gateway reads the local `opencode auth login` state (`~/.local/share/opencode/auth.json`, the `opencode-go` entry, else `opencode`); switch accounts with `opencode auth login`, or set `apiKey` / `OPENCODE_GO_API_KEY` on the gateway.
 - **The first refresh may be empty.** On a cold gateway the listing returns the last good result within 8s and refreshes in the background; refresh again once it lands.
 - A refresh now distinguishes a 200 empty listing from HTTP 401 and timeouts; `no credential resolved from OPENCODE_GATEWAY_KEY` means `.env` is missing the variable.
 - **The free tier is unaffected**: the `OpenCode Free` card never goes through the 8787 gateway.

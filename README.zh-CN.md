@@ -152,6 +152,7 @@ DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两�
 补充：
 
 - **Go 卡只认 `go/`。** 网关写成 `prefix: "opencode-go"` 会列出 `opencode-go/...`，插件按设计把它当成本地后端目录丢弃。
+- **Key 不在插件里。** 网关不写 `apiKey` 时读本机 `opencode auth login` 的登录态（`~/.local/share/opencode/auth.json` 的 `opencode-go`，没有则 `opencode` 条目）；换账号用 `opencode auth login`，或在网关配置/`OPENCODE_GO_API_KEY` 里指定。
 - **第一次刷新可能为空。** 网关冷启动时先返回上次结果（最多等 8 秒），后台读取完成后再次刷新即完整。
 - 刷新现在会区分「200 空列表 / HTTP 401 / 超时」；若看到 `no credential resolved from OPENCODE_GATEWAY_KEY`，就是 `.env` 没配。
 - **免费档与这些无关**：`OpenCode Free` 卡不经过 8787 网关。
