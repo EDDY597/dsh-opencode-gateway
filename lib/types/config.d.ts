@@ -62,37 +62,55 @@ export interface GatewayConfig {
     /** Retries are the gateway's own job; keep this at zero. */
     retryPolicy?: RetryPolicyConfig;
 }
-/** The inlined opencode2api local proxy route (Zen free tier). */
+/** How the free route reaches the free tier. */
+export type FreeMode = 'service' | 'embedded';
+/** The free tier route. */
 export interface FreeConfig {
     /** Harness route key. */
     provider?: string;
     /** Name shown in selectors. */
     displayName?: string;
-    /** Local opencode backend the proxy drives. */
+    /**
+     * Backend kind. `service` (default) proxies to the standalone Go
+     * opencode2api (client fingerprinting, exit rotation); `embedded` runs the
+     * vendored in-process proxy driving this machine's `opencode serve`.
+     */
+    mode?: FreeMode;
+    /** `service` mode: the Go opencode2api base URL. */
+    serviceUrl?: string;
+    /** `service` mode: credential reference for the service's server key. */
+    serviceApiKeyEnv?: string;
+    /** `service` mode: spawn the service executable when it is not listening. */
+    manageService?: boolean;
+    /** `service` mode: the service executable; empty resolves the companion gateway's `bin\opencode2api.exe`. */
+    serviceExePath?: string;
+    /** `service` mode: the service's config file; empty resolves the companion gateway's `bin\config.json`. */
+    serviceConfigPath?: string;
+    /** `embedded` mode: local opencode backend the proxy drives. */
     serverUrl?: string;
     /** Port the in-process proxy listens on, loopback only. */
     proxyPort?: number;
-    /** opencode executable. */
+    /** `embedded` mode: opencode executable. */
     opencodePath?: string;
-    /** Spawn `opencode serve` when the backend is absent. */
+    /** `embedded` mode: spawn `opencode serve` when the backend is absent. */
     manageBackend?: boolean;
-    /** Backend Basic Auth password (local secret; the gateway passes it the same way). */
+    /** `embedded` mode: backend Basic Auth password (local secret; the gateway passes it the same way). */
     serverPassword?: string;
-    /** Credential reference for the Zen key that unlocks paid models; falls back to the local opencode login. */
+    /** `embedded` mode: credential reference for the Zen key; falls back to the local opencode login. */
     zenApiKeyEnv?: string;
-    /** Disable OpenCode's built-in tools through the tool-lock plugin (free tier needs this). */
+    /** `embedded` mode: disable OpenCode's built-in tools through the tool-lock plugin (free tier needs this). */
     disableTools?: boolean;
-    /** Built-in tools kept despite `disableTools`. */
+    /** `embedded` mode: built-in tools kept despite `disableTools`. */
     internalAllowedTools?: string[];
-    /** Proxy prompt mode: `standard` or `plugin-inject`. */
+    /** `embedded` mode: proxy prompt mode: `standard` or `plugin-inject`. */
     promptMode?: string;
-    /** Ignore the client's system prompt. */
+    /** `embedded` mode: ignore the client's system prompt. */
     omitSystemPrompt?: boolean;
-    /** Single-request timeout in milliseconds. */
+    /** `embedded` mode: single-request timeout in milliseconds. */
     requestTimeoutMs?: number;
-    /** Periodically clean the backend's conversation store. */
+    /** `embedded` mode: periodically clean the backend's conversation store. */
     autoCleanupConversations?: boolean;
-    /** Unix fake-home isolation; Windows always uses the real user directory. */
+    /** `embedded` mode: Unix fake-home isolation; Windows always uses the real user directory. */
     useIsolatedHome?: boolean;
     /** Menu entries; when set, replaces the live listing projection entirely. */
     models?: RouteModel[];
@@ -139,6 +157,12 @@ export interface ResolvedConfig {
     free: {
         provider: string;
         displayName: string;
+        mode: FreeMode;
+        serviceUrl: string;
+        serviceApiKeyEnv: string;
+        manageService: boolean;
+        serviceExePath: string;
+        serviceConfigPath: string;
         serverUrl: string;
         proxyPort: number;
         opencodePath: string;

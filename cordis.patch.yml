@@ -4,8 +4,11 @@
 # Defaults are used when no config is given. For the OpenCode Go card, the
 # gateway at http://127.0.0.1:8787/v1 must expose `go/` ids (its `opencode-go`
 # upstream must use `prefix: "go"`), and ~/.dsh/.env must set
-# OPENCODE_GATEWAY_KEY to that gateway's token. The free card needs neither.
-# Uncomment and edit only if you need non-default values:
+# OPENCODE_GATEWAY_KEY to that gateway's token. The free card defaults to the
+# companion gateway's Go opencode2api service (bin/opencode2api.exe, port
+# 18080); its server key is read from that bin/config.json unless
+# OPENCODE2API_SERVER_KEY is set. Uncomment and edit only if you need
+# non-default values:
 #    config:
 #      gateway:
 #        provider: opencode-gateway
@@ -15,8 +18,13 @@
 #        hiddenModels: ["free/"]
 #      free:
 #        provider: opencode-free
-#        serverUrl: http://127.0.0.1:10001
+#        mode: service            # or "embedded" (drives local `opencode serve`)
+#        serviceUrl: http://127.0.0.1:18080
+#        serviceApiKeyEnv: OPENCODE2API_SERVER_KEY
+#        manageService: true      # spawn bin/opencode2api.exe when absent
 #        proxyPort: 10102
+#        # embedded-mode only:
+#        serverUrl: http://127.0.0.1:10001
 #        opencodePath: opencode
 #        manageBackend: true
 #        disableTools: true

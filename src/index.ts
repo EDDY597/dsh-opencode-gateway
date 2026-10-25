@@ -22,6 +22,7 @@
  */
 
 import { fileURLToPath } from 'node:url'
+import path from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
@@ -42,6 +43,16 @@ import { startLoopbackServer } from './local/loopback.ts'
 import type { LoopbackServer } from './local/loopback.ts'
 import { resolveOpencodePath } from './local/backend.ts'
 import { listFreeModels } from './free-listing.ts'
+import {
+  defaultServicePaths,
+  ensureServiceRunning,
+  listServiceModels,
+  moduleDirname,
+  readServiceKeyFromConfig,
+  serviceChat,
+  serviceResponses,
+} from './free-service.ts'
+import type { FreeServiceClient, ServiceProcess } from './free-service.ts'
 import { fetchGatewayListing, fetchGatewayListingDetailed } from './discovery.ts'
 import {
   emptyCredentialStore,
@@ -59,6 +70,14 @@ export { emptyCredentialStore, minimalAuthContext, readLocalOpencodeKey, resolve
 export { enrichFromRegistry, freeProfile, gatewayProfile, projectGatewayListing } from './routes.ts'
 export { GO_OFFICIAL_PREFIXES, GO_REGISTRY, reasoningEffortsFor } from './registry.ts'
 export { listFreeModels, parseFreeModelIds, resetFreeListingCache } from './free-listing.ts'
+export {
+  defaultServicePaths,
+  listServiceModels,
+  readServiceKeyFromConfig,
+  serviceHealthy,
+} from './free-service.ts'
+export type { FreeServiceClient, ServiceProcess } from './free-service.ts'
+export type { FreeMode } from './config.ts'
 export { GATEWAY_DEFAULT_MODELS, FREE_DEFAULT_MODELS } from './default-models.ts'
 
 /** Cordis plugin name; also the log and error-message prefix, the discovery key, and the settings form namespace. */
@@ -77,10 +96,15 @@ interface RouteState {
   menu: MenuModel[]
 }
 
-/** The free route's live runtime: the proxy, its loopback listener, readiness. */
+/** The free route's live runtime: the backend, its loopback listener, readiness. */
 interface FreeRuntime {
   free: ResolvedConfig['free']
-  proxy: LocalProxy
+  /** `embedded` mode's in-process proxy; undefined in `service` mode. */
+  proxy?: LocalProxy
+  /** `service` mode's endpoint client; undefined in `embedded` mode. */
+  service?: FreeServiceClient
+  /** The service process this plugin spawned (never a reused one). */
+  serviceProcess?: ServiceProcess
   server?: LoopbackServer
   serverReady: boolean
 }
@@ -96,16 +120,26 @@ export function apply(ctx: Context, config: ConfigShape): void {
   })
   options()
 
-  // --- free route: inlined local proxy + loopback listener ----------------
-  // Structural free-route facts (endpoint, port, executable, prompt mode) are
-  // baked into the proxy and listener at construction; the settings page only
-  // edits the model menu, which rebuilds live. A structural edit therefore
-  // asks for a restart rather than pretending it applied.
+  // --- free route: loopback listener over a swappable backend -------------
+  // Structural free-route facts (mode, endpoint, port, executable, prompt
+  // mode) are baked into the backend and listener at construction; the
+  // settings page only edits the model menu, which rebuilds live. A
+  // structural edit therefore asks for a restart rather than pretending it
+  // applied.
   const assetsPath = fileURLToPath(new URL('../assets/opencode2api-tool-lock.js', import.meta.url))
+  // The package root: parent of `src/` in a checkout, of `lib/` in a build —
+  // the anchor the sibling gateway checkout (and its bin\) is resolved from.
+  const packageRoot = path.dirname(moduleDirname(import.meta.url))
   let freeRuntime: FreeRuntime | undefined
   let freeStructuralFacts: string | undefined
 
   const structuralFactsOf = (free: ResolvedConfig['free']): string => JSON.stringify({
+    mode: free.mode,
+    serviceUrl: free.serviceUrl,
+    serviceApiKeyEnv: free.serviceApiKeyEnv,
+    manageService: free.manageService,
+    serviceExePath: free.serviceExePath,
+    serviceConfigPath: free.serviceConfigPath,
     serverUrl: free.serverUrl,
     proxyPort: free.proxyPort,
     opencodePath: free.opencodePath,
@@ -121,6 +155,16 @@ export function apply(ctx: Context, config: ConfigShape): void {
     zenApiKeyEnv: free.zenApiKeyEnv,
   })
 
+  /** The free route's model-listing source, shared by discovery and the poll. */
+  const freeListingIds = async (free: ResolvedConfig['free']): Promise<string[]> => {
+    if (free.mode === 'service') {
+      const client = freeRuntime?.service
+      if (client === undefined) return []
+      return listServiceModels(client).catch(() => [])
+    }
+    return listFreeModels({ opencodePath: resolveOpencodePath(free.opencodePath).path ?? free.opencodePath })
+  }
+
   const buildFreeRuntime = (): void => {
     const free = options().free
     const facts = structuralFactsOf(free)
@@ -131,42 +175,91 @@ export function apply(ctx: Context, config: ConfigShape): void {
       return
     }
     freeStructuralFacts = facts
+    const runtime: FreeRuntime = { free, serverReady: false }
     try {
-      const zenApiKey = process.env[free.zenApiKeyEnv] ?? readLocalOpencodeKey()
-      const proxy = createLocalProxy(normalizeLocalProxyConfig({
-        id: free.provider,
-        baseURL: free.serverUrl,
-        serverPassword: free.serverPassword,
-        opencodePath: free.opencodePath,
-        manageBackend: free.manageBackend,
-        zenApiKey: zenApiKey ?? '',
-        disableTools: free.disableTools,
-        internalAllowedTools: [...free.internalAllowedTools],
-        promptMode: free.promptMode,
-        omitSystemPrompt: free.omitSystemPrompt,
-        requestTimeoutMs: free.requestTimeoutMs,
-        autoCleanupConversations: free.autoCleanupConversations,
-        useIsolatedHome: free.useIsolatedHome,
-        toolLockPluginPath: assetsPath,
-      }))
-      const runtime: FreeRuntime = { free, proxy, serverReady: false }
-      freeRuntime = runtime
-      void startLoopbackServer({
-        port: free.proxyPort,
-        listModels: () => runtime.proxy.listModels(),
-        handleChat: (body, stream) => runtime.proxy.handleChat(body, stream),
-        handleResponses: (body, stream) => runtime.proxy.handleResponses(body, stream),
-      }).then((started) => {
-        if (freeRuntime !== runtime) return
-        runtime.server = started
-        runtime.serverReady = true
-        ensure()
-      }, (error) => {
-        ctx.logger?.error?.(`opencode-gateway: free route unavailable, loopback listener failed: ${error?.message ?? error}`)
-        ensure()
-      })
+      if (free.mode === 'service') {
+        const defaults = defaultServicePaths(packageRoot)
+        const configPath = free.serviceConfigPath || defaults.configPath || ''
+        const apiKey = process.env[free.serviceApiKeyEnv] ?? (configPath ? readServiceKeyFromConfig(configPath) : undefined)
+        if (apiKey === undefined || apiKey.length === 0) {
+          throw new Error(
+            `no opencode2api server key: set ${free.serviceApiKeyEnv} in ~/.dsh/.env`
+            + ' or keep the companion gateway bin/config.json readable',
+          )
+        }
+        const client: FreeServiceClient = { serviceUrl: free.serviceUrl, apiKey }
+        runtime.service = client
+        freeRuntime = runtime
+        void (async () => {
+          const spawned = await ensureServiceRunning({
+            serviceUrl: free.serviceUrl,
+            apiKey,
+            manageService: free.manageService,
+            exePath: free.serviceExePath || defaults.exePath || '',
+            configPath: configPath || (defaults.exePath ? defaults.exePath : ''),
+          }, ctx.logger)
+          if (freeRuntime !== runtime) {
+            // A settings edit replaced the runtime while we were starting;
+            // the fresh runtime manages its own process.
+            spawned?.stop()
+            return
+          }
+          runtime.serviceProcess = spawned
+          return startLoopbackServer({
+            port: free.proxyPort,
+            listModels: () => listServiceModels(client),
+            handleChat: (body, stream) => serviceChat(client, body, stream),
+            handleResponses: (body, stream) => serviceResponses(client, body, stream),
+          }).then((started) => {
+            if (freeRuntime !== runtime) return
+            runtime.server = started
+            runtime.serverReady = true
+            ensure()
+          }, (error) => {
+            ctx.logger?.error?.(`opencode-gateway: free route unavailable, loopback listener failed: ${error?.message ?? error}`)
+            ensure()
+          })
+        })().catch((error: any) => {
+          ctx.logger?.error?.(`opencode-gateway: free route unavailable, service start failed: ${error?.message ?? error}`)
+          ensure()
+        })
+      } else {
+        const zenApiKey = process.env[free.zenApiKeyEnv] ?? readLocalOpencodeKey()
+        const proxy = createLocalProxy(normalizeLocalProxyConfig({
+          id: free.provider,
+          baseURL: free.serverUrl,
+          serverPassword: free.serverPassword,
+          opencodePath: free.opencodePath,
+          manageBackend: free.manageBackend,
+          zenApiKey: zenApiKey ?? '',
+          disableTools: free.disableTools,
+          internalAllowedTools: [...free.internalAllowedTools],
+          promptMode: free.promptMode,
+          omitSystemPrompt: free.omitSystemPrompt,
+          requestTimeoutMs: free.requestTimeoutMs,
+          autoCleanupConversations: free.autoCleanupConversations,
+          useIsolatedHome: free.useIsolatedHome,
+          toolLockPluginPath: assetsPath,
+        }))
+        runtime.proxy = proxy
+        freeRuntime = runtime
+        void startLoopbackServer({
+          port: free.proxyPort,
+          listModels: () => runtime.proxy!.listModels(),
+          handleChat: (body, stream) => runtime.proxy!.handleChat(body, stream),
+          handleResponses: (body, stream) => runtime.proxy!.handleResponses(body, stream),
+        }).then((started) => {
+          if (freeRuntime !== runtime) return
+          runtime.server = started
+          runtime.serverReady = true
+          ensure()
+        }, (error) => {
+          ctx.logger?.error?.(`opencode-gateway: free route unavailable, loopback listener failed: ${error?.message ?? error}`)
+          ensure()
+        })
+      }
     } catch (error: any) {
-      ctx.logger?.error?.(`opencode-gateway: inlined local proxy failed to start: ${error?.message ?? error}`)
+      ctx.logger?.error?.(`opencode-gateway: free route failed to start: ${error?.message ?? error}`)
       freeRuntime = undefined
     }
   }
@@ -299,12 +392,13 @@ export function apply(ctx: Context, config: ConfigShape): void {
     ctx.llm.registerModelDiscovery(name, async (request: LlmModelDiscoveryRequest): Promise<readonly LlmDiscoveredModel[]> => {
       const current = options()
       if (request.provider === current.free.provider) {
-        // opencode's own answer, not the backend's credentialed provider view:
-        // only the former is the free tier (see ./free-listing.ts). It needs no
-        // healthy backend, so the card can list free models before one is up.
-        const ids = await listFreeModels({ opencodePath: resolveOpencodePath(current.free.opencodePath).path ?? current.free.opencodePath })
+        // In `service` mode the service's own `/v1/models` (free_only) is the
+        // free tier; in `embedded` mode opencode's own answer (not the
+        // backend's credentialed provider view — see ./free-listing.ts). Both
+        // need no healthy backend, so the card can list free models first.
+        const ids = await freeListingIds(current.free)
         // Same registry enrichment the gateway branch gets; the free tier's ids
-        // are already the proxy's raw wire spelling, so nothing is deduped here.
+        // are already the backend's raw wire spelling, so nothing is deduped here.
         return ids.map(id => discoveryRow(enrichFromRegistry({ id }), current.free.displayName))
       }
       // The settings refresh is explicit: a missing token must say so instead
@@ -337,7 +431,7 @@ export function apply(ctx: Context, config: ConfigShape): void {
     const key = await resolveCredential(ctx, current.gateway.apiKeyEnv).catch(() => undefined)
     const gatewayNext = await fetchGatewayListing(current.gateway.baseURL, key)
     // Same source the card's refresh reads, so the poll cannot disagree with it.
-    const freeNext = await listFreeModels({ opencodePath: resolveOpencodePath(current.free.opencodePath).path ?? current.free.opencodePath })
+    const freeNext = await freeListingIds(current.free)
     const changed = !sameList(gatewayNext, gatewayListing) || !sameList(freeNext, freeListing)
     gatewayListing = gatewayNext
     freeListing = freeNext
@@ -369,8 +463,10 @@ export function apply(ctx: Context, config: ConfigShape): void {
       clearInterval(pollTimer)
       void freeRuntime?.server?.close()
       // killBackend only ends a backend this proxy spawned; one reused from
-      // the gateway stays with the gateway.
-      freeRuntime?.proxy.killBackend()
+      // the gateway stays with the gateway. The spawned opencode2api process
+      // follows the same ownership rule.
+      freeRuntime?.proxy?.killBackend()
+      freeRuntime?.serviceProcess?.stop()
     }
   }, 'opencode-gateway disposal')
 }

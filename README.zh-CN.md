@@ -7,7 +7,7 @@ DeepSeek Harness（DSH）插件：把本机 opencode 生态接进 DSH 的模型�
 | route | 端点 | 承载内容 |
 | --- | --- | --- |
 | `opencode-gateway` | `http://127.0.0.1:8787/v1`（本机 [opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) 网关） | 网关聚合的一切：OpenCode Go 订阅（读本地 opencode 登录态）、OpenCode Zen、以及 gateway.config.json 里的任意自定义上游 |
-| `opencode-free` | 插件进程内环回代理（默认 `http://127.0.0.1:10102/v1`） | 内联的 opencode2api 移植：驱动本机 `opencode serve` 后端访问 Zen 免费档，**不依赖网关进程** |
+| `opencode-free` | 插件进程内环回代理（默认 `http://127.0.0.1:10102/v1`） | Zen 免费档，经配套网关的 **Go 版 [opencode2api](https://github.com/jasonxu114514/opencode2api) 服务**（默认 `http://127.0.0.1:18080`）——完整客户端指纹、出口轮换、匿名通道；`mode: "embedded"` 回退到内联移植驱动本机 `opencode serve` |
 
 按设计本插件**不带用量面板**；额度显示由网关的 `/api/usage` 与托盘承担。
 
@@ -15,13 +15,14 @@ DeepSeek Harness（DSH）插件：把本机 opencode 生态接进 DSH 的模型�
 
 - **OpenCode Go 精修名录**：默认菜单对齐 ZCode 的 15 个模型；41 个条目的展示名、上下文窗口、思考强度词表、视觉标记与拒用名单实测值移植自 [AIMFllyYS/dsh-protocom-api](https://github.com/AIMFllyYS/dsh-protocom-api)（MIT）——包括 Go 用 `off` 拒 `none`、Grok/Muse 只认 `/responses`（网关侧已自动转换）这类实测坑。
 - **实时模型发现**（软失败）：两条路由先以配置/种子菜单挂载，端点 listing 回答后原地升级；发现失败静默保持现状，对话不中断。
-- **后端生命周期托管**：免费档后端不在时自动 spawn `opencode serve`（首次约 10~20 秒），插件卸载时只回收**自己 spawn 的**后端；复用自网关的后端留给网关。
-- **进程内环回桥**：pi-ai 传输需要真实 URL，插件把 LocalProxy 函数包成一个仅绑定回环地址的 HTTP 监听（默认 10102，可配）；环回服务永不驻留事件循环，headless 任务照常退出。
+- **后端生命周期托管**：`service` 模式（默认）下，18080 端口没有监听时自动 spawn 配套网关的 `bin\opencode2api.exe`，插件卸载时只回收**自己 spawn 的**进程；已在运行的实例（比如网关启动脚本拉起的）原样复用。`embedded` 模式对 `opencode serve` 亦然。
+- **进程内环回桥**：pi-ai 传输需要真实 URL，插件把免费档后端的 OpenAI 表面包成一个仅绑定回环地址的 HTTP 监听（默认 10102，可配）；`service` 模式下它是对 Go 服务的带鉴权透传，`embedded` 模式下包装 LocalProxy 函数。环回服务永不驻留事件循环，headless 任务照常退出。
 
 ## 系统要求
 
 - **DSH ≥ 0.1.7-rc.2 且 < 0.3.0-0**（peer 实测范围），已在 **0.2.0-rc.2** 验证
-- 免费档需要本机装有 opencode CLI，建议先 `opencode auth login`（免费账号模型列表与限额更好，匿名也能用）
+- 免费档（默认 `service` 模式）需要配套网关的检出与本插件同级——自动解析 `..\opencode-api-plugin\bin\opencode2api.exe` + `bin\config.json`（server key 一并读出），服务缺席时自动拉起；自定义位置或已运行的服务用 `free.serviceUrl` / `free.serviceExePath` / `OPENCODE2API_SERVER_KEY` 指定
+- 免费档 `embedded` 模式需要本机装有 opencode CLI，建议先 `opencode auth login`（免费账号模型列表与限额更好，匿名也能用）
 - 网关路由需要配套网关 [EDDY597/opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) 在运行（`start-gateway.cmd`、`start-tray-hidden.vbs` 或托盘）
 - 网关路由还要求网关侧 `opencode-go` upstream **已启用且 `prefix` 为 `go`**（网关示例配置已如此），并在 `~/.dsh/.env` 设置 `OPENCODE_GATEWAY_KEY=<网关 token>`。缺任何一项，Go 卡的刷新会明确报「缺凭据 / HTTP 401 / 空列表」，而不是静默失败。
 
@@ -68,13 +69,17 @@ pnpm dsh plugin --profile web add "D:/Agent/dsh-opencode-gateway"
       models: []                        # 额外/覆盖条目
     free:
       provider: opencode-free
-      serverUrl: http://127.0.0.1:10001 # opencode 后端
-      proxyPort: 10102                  # 环回监听端口
-      opencodePath: opencode            # opencode 可执行文件
-      manageBackend: true
-      zenApiKeyEnv: OPENCODE_ZEN_API_KEY
-      disableTools: true                # 免费档必需
-      internalAllowedTools: [webfetch, bash, websearch]
+      mode: service                       # "embedded" 改为驱动本机 opencode serve
+      serviceUrl: http://127.0.0.1:18080  # Go opencode2api 服务
+      serviceApiKeyEnv: OPENCODE2API_SERVER_KEY
+      manageService: true                 # 服务缺席时自动拉起配套 bin/opencode2api.exe
+      proxyPort: 10102                    # 环回监听端口
+      # 以下仅 embedded 模式：
+      # serverUrl: http://127.0.0.1:10001 # opencode 后端
+      # opencodePath: opencode            # opencode 可执行文件
+      # manageBackend: true
+      # disableTools: true                # 免费档必需
+      # internalAllowedTools: [webfetch, bash, websearch]
 ```
 
 ## 模型管理页
@@ -83,7 +88,7 @@ DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两�
 
 - **刷新**：向对应端点拉取实时模型列表（OpenCode Go 走网关 `/v1/models`，OpenCode Free 走内联代理的后端 listing）。刷新最多等 60 秒；401/超时/网络错误会显示具体原因，只有「200 但列表为空」才显示空列表提示。**Go 卡片只保留 `go/` 前缀的条目**，即网关 `opencode-go` upstream 对官方 `https://opencode.ai/zen/go/v1/models` 的实时读取（实测该前缀与官方端点逐条一致）；因此网关侧该 upstream 的 `prefix` 必须是 `go`（示例配置已如此）。网关同一份 listing 还混着两个来源的近似前缀，都**不属于 Go 订阅**、一律排除：`opencode-go/` 是本地 `opencode serve` 后端的目录（经 `local-free` upstream 透传，其 `modelRewrite` 只映射 `opencode/`），`free/` 是同一后端的 Zen 目录（付费模型也在其中）。把 `opencode-go/` 当成 `go/` 的别名拼写是错的——那正是 `opencode-go/step-5-preview-free` 这类官方并未提供的本地条目出现在 Go 卡片上的原因。
 - **不设静态名单**：菜单成员只由实时 listing 决定。官方新增模型自动出现（如 `go/beam-free`），官方下架的自动消失；`hiddenModels` 仍可作为你在官方集合内额外排除的配置项。**没有任何「已确认不可用」黑名单**——「这个 id 跑不通」是某一刻的实测结论，不是模型的固有属性；写死成名单会既藏住官方新模型，又在官方修好后继续误报。官方列出的模型即便某次请求失败也照原样保留，报错会由网关如实返回。
-- **免费档取 opencode 自己的答案**：`OpenCode Free` 卡片的候选行来自 `opencode models` 的输出（运行时剔除 `OPENCODE_API_KEY`，只取 `opencode/` 前缀），因此与你在 CLI 里看到的免费档**逐条一致**（本机 10 个）。**不要用本地后端的 provider 配置做这件事**：那份视图是「带凭据」的，设了 key 时 `opencode` provider 会把付费目录一起报出来（实测 84 个），按 `cost` 过滤会同时**漏掉**它根本不列的免费模型（`beam-free`、`deepseek-v4.1-flash-free`、`glm-5.3-flash-free`、`nemotron-3.5-super-vl-free`）并**多出**地区受限的条目（`cat-jam-free`、`muse-spark-1.3-contributor-free`）。结果按 10 分钟缓存，且失败时回退上次成功结果，不会因一次 spawn 失败显示成"免费档消失"。
+- **免费档取后端自己的答案**：`service` 模式（默认）下来自 Go 服务的 `/v1/models`（配套配置 `models.free_only: true`，listing 恰为免费档，裸 id 如 `big-pickle`）；`embedded` 模式下来自 `opencode models` 的输出（运行时剔除 `OPENCODE_API_KEY`，只取 `opencode/` 前缀）。**不要用本地后端的 provider 配置做这件事**：那份视图是「带凭据」的，设了 key 时 `opencode` provider 会把付费目录一起报出来（实测 84 个），按 `cost` 过滤会同时**漏掉**它根本不列的免费模型（`beam-free`、`deepseek-v4.1-flash-free`、`glm-5.3-flash-free`、`nemotron-3.5-super-vl-free`）并**多出**地区受限的条目（`cat-jam-free`、`muse-spark-1.3-contributor-free`）。结果按 10 分钟缓存，且失败时回退上次成功结果，不会因一次读取失败显示成"免费档消失"。
 - **勾选**：勾选的模型进入模型菜单（含输入框芯片）；未勾选的仅在此列出。从 listing 新发现的模型标"发现"。
 - **失效条目清理**：已勾选但某次刷新未再返回的模型会标「不在列表」，**不会被自动移除**。卡片底部的「移除 N 个失效条目」按钮按当前勾选状态一次性剔除它们并保存——这是唯一不经取消勾选就改动菜单的路径，且必须由你点击触发。**防护**：端点返回空列表时不做失效判定；刷新现在会区分「200 空列表」与「401 / 超时 / 网络失败」，后者显示具体错误，不会把整个菜单清空。
 - **保存勾选**：以修订号围栏的原子写入 settings 页，菜单与输入框芯片即时更新，重启后保留；冲突时整页重载并丢弃暂存。
@@ -96,7 +101,8 @@ DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两�
 | 变量 | 说明 |
 | --- | --- |
 | `OPENCODE_GATEWAY_KEY` | 网关 Bearer token；**网关未设 token 时任意非空值即可**。刷新时缺这个变量会直接报「no credential resolved…」，聊天则在发请求前报 `MISSING_CREDENTIAL` |
-| `OPENCODE_ZEN_API_KEY` | 透传为后端 `OPENCODE_API_KEY` 解锁付费模型；未设时回退读本地 opencode 登录态（v0.1 只读进程环境，不走凭据服务） |
+| `OPENCODE2API_SERVER_KEY` | Go opencode2api 服务的 server key（免费路由 `service` 模式）；未设时回退读配套网关 `bin/config.json` 的 `server_keys[0]` |
+| `OPENCODE_ZEN_API_KEY` | （`embedded` 模式）透传为后端 `OPENCODE_API_KEY` 解锁付费模型；未设时回退读本地 opencode 登录态（v0.1 只读进程环境，不走凭据服务） |
 
 ### `models[]` 条目
 

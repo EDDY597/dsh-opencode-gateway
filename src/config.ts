@@ -68,37 +68,56 @@ export interface GatewayConfig {
   retryPolicy?: RetryPolicyConfig
 }
 
-/** The inlined opencode2api local proxy route (Zen free tier). */
+/** How the free route reaches the free tier. */
+export type FreeMode = 'service' | 'embedded'
+
+/** The free tier route. */
 export interface FreeConfig {
   /** Harness route key. */
   provider?: string
   /** Name shown in selectors. */
   displayName?: string
-  /** Local opencode backend the proxy drives. */
+  /**
+   * Backend kind. `service` (default) proxies to the standalone Go
+   * opencode2api (client fingerprinting, exit rotation); `embedded` runs the
+   * vendored in-process proxy driving this machine's `opencode serve`.
+   */
+  mode?: FreeMode
+  /** `service` mode: the Go opencode2api base URL. */
+  serviceUrl?: string
+  /** `service` mode: credential reference for the service's server key. */
+  serviceApiKeyEnv?: string
+  /** `service` mode: spawn the service executable when it is not listening. */
+  manageService?: boolean
+  /** `service` mode: the service executable; empty resolves the companion gateway's `bin\opencode2api.exe`. */
+  serviceExePath?: string
+  /** `service` mode: the service's config file; empty resolves the companion gateway's `bin\config.json`. */
+  serviceConfigPath?: string
+  /** `embedded` mode: local opencode backend the proxy drives. */
   serverUrl?: string
   /** Port the in-process proxy listens on, loopback only. */
   proxyPort?: number
-  /** opencode executable. */
+  /** `embedded` mode: opencode executable. */
   opencodePath?: string
-  /** Spawn `opencode serve` when the backend is absent. */
+  /** `embedded` mode: spawn `opencode serve` when the backend is absent. */
   manageBackend?: boolean
-  /** Backend Basic Auth password (local secret; the gateway passes it the same way). */
+  /** `embedded` mode: backend Basic Auth password (local secret; the gateway passes it the same way). */
   serverPassword?: string
-  /** Credential reference for the Zen key that unlocks paid models; falls back to the local opencode login. */
+  /** `embedded` mode: credential reference for the Zen key; falls back to the local opencode login. */
   zenApiKeyEnv?: string
-  /** Disable OpenCode's built-in tools through the tool-lock plugin (free tier needs this). */
+  /** `embedded` mode: disable OpenCode's built-in tools through the tool-lock plugin (free tier needs this). */
   disableTools?: boolean
-  /** Built-in tools kept despite `disableTools`. */
+  /** `embedded` mode: built-in tools kept despite `disableTools`. */
   internalAllowedTools?: string[]
-  /** Proxy prompt mode: `standard` or `plugin-inject`. */
+  /** `embedded` mode: proxy prompt mode: `standard` or `plugin-inject`. */
   promptMode?: string
-  /** Ignore the client's system prompt. */
+  /** `embedded` mode: ignore the client's system prompt. */
   omitSystemPrompt?: boolean
-  /** Single-request timeout in milliseconds. */
+  /** `embedded` mode: single-request timeout in milliseconds. */
   requestTimeoutMs?: number
-  /** Periodically clean the backend's conversation store. */
+  /** `embedded` mode: periodically clean the backend's conversation store. */
   autoCleanupConversations?: boolean
-  /** Unix fake-home isolation; Windows always uses the real user directory. */
+  /** `embedded` mode: Unix fake-home isolation; Windows always uses the real user directory. */
   useIsolatedHome?: boolean
   /** Menu entries; when set, replaces the live listing projection entirely. */
   models?: RouteModel[]
@@ -152,6 +171,12 @@ export interface ResolvedConfig {
     free: {
     provider: string
     displayName: string
+    mode: FreeMode
+    serviceUrl: string
+    serviceApiKeyEnv: string
+    manageService: boolean
+    serviceExePath: string
+    serviceConfigPath: string
     serverUrl: string
     proxyPort: number
     opencodePath: string
@@ -195,6 +220,17 @@ const DEFAULT_GATEWAY = {
 const DEFAULT_FREE = {
   provider: 'opencode-free',
   displayName: 'OpenCode Free',
+  // 'service' proxies to the standalone Go opencode2api (client fingerprinting,
+  // exit rotation — the free tier's working path since OpenCode tightened its
+  // client detection in Oct 2026); 'embedded' drives the machine's `opencode
+  // serve` through the vendored in-process proxy.
+  mode: 'service' as FreeMode,
+  serviceUrl: 'http://127.0.0.1:18080',
+  serviceApiKeyEnv: 'OPENCODE2API_SERVER_KEY',
+  manageService: true,
+  // Empty means: resolve the companion gateway's bin\ next to this plugin.
+  serviceExePath: '',
+  serviceConfigPath: '',
   serverUrl: 'http://127.0.0.1:10001',
   // 10102, not 10002: a running DeepSeek Harness host itself binds 10002.
   proxyPort: 10102,
@@ -259,6 +295,12 @@ const gatewaySectionSchema: z<GatewayConfig> = z.object({
 const freeSectionSchema: z<FreeConfig> = z.object({
   provider: z.string().default(DEFAULT_FREE.provider),
   displayName: z.string().default(DEFAULT_FREE.displayName),
+  mode: z.union([z.const('service'), z.const('embedded')]).default(DEFAULT_FREE.mode),
+  serviceUrl: z.string().default(DEFAULT_FREE.serviceUrl),
+  serviceApiKeyEnv: z.string().default(DEFAULT_FREE.serviceApiKeyEnv),
+  manageService: z.boolean().default(DEFAULT_FREE.manageService),
+  serviceExePath: z.string().default(DEFAULT_FREE.serviceExePath),
+  serviceConfigPath: z.string().default(DEFAULT_FREE.serviceConfigPath),
   serverUrl: z.string().default(DEFAULT_FREE.serverUrl),
   proxyPort: z.number().default(DEFAULT_FREE.proxyPort),
   opencodePath: z.string().default(DEFAULT_FREE.opencodePath),
@@ -389,6 +431,12 @@ export function resolveConfig(source: ConfigInput): ResolvedConfig {
     free: {
       provider: freeProvider,
       displayName: freeRaw.displayName ?? freeProvider,
+      mode: freeRaw.mode ?? DEFAULT_FREE.mode,
+      serviceUrl: (freeRaw.serviceUrl ?? DEFAULT_FREE.serviceUrl).replace(/\/+$/, ''),
+      serviceApiKeyEnv: freeRaw.serviceApiKeyEnv ?? DEFAULT_FREE.serviceApiKeyEnv,
+      manageService: freeRaw.manageService ?? DEFAULT_FREE.manageService,
+      serviceExePath: freeRaw.serviceExePath ?? DEFAULT_FREE.serviceExePath,
+      serviceConfigPath: freeRaw.serviceConfigPath ?? DEFAULT_FREE.serviceConfigPath,
       serverUrl: freeServerUrl.replace(/\/+$/, ''),
       proxyPort: positiveInteger(freeRaw.proxyPort ?? DEFAULT_FREE.proxyPort, 'free.proxyPort', 65_535),
       opencodePath: freeRaw.opencodePath ?? DEFAULT_FREE.opencodePath,
@@ -415,5 +463,9 @@ export function resolveConfig(source: ConfigInput): ResolvedConfig {
 /** Default settings used by an absent section and by composition examples. */
 export const DEFAULT_CONFIG: Config = {
   gateway: { ...DEFAULT_GATEWAY, hiddenModels: [...DEFAULT_GATEWAY.hiddenModels] },
-  free: { ...DEFAULT_FREE, internalAllowedTools: [...DEFAULT_FREE.internalAllowedTools] },
+  free: {
+    ...DEFAULT_FREE,
+    internalAllowedTools: [...DEFAULT_FREE.internalAllowedTools],
+    mode: DEFAULT_FREE.mode,
+  },
 }

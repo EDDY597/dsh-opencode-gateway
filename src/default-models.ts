@@ -4,7 +4,8 @@
  * The gateway route ships exactly the eight OpenCode Go subscription models
  * from the user's ZCode provider config, enriched with the measured OpenCode
  * Go registry (windows, effort vocabularies, vision). The Zen free models
- * belong to the free route (raw `opencode/<model>` wire ids) and are
+ * belong to the free route (the backend's raw wire ids — bare since the Go
+ * opencode2api became the free backend) and are
  * deliberately NOT menu defaults here: a refresh on the Go card filters the
  * gateway's aggregated listing down to the subscription family, per the
  * route's `hiddenModels` prefixes.
@@ -39,29 +40,23 @@ export const GATEWAY_DEFAULT_MODELS: readonly RouteModel[] = [
 ]
 
 /**
- * Free route: opencode's own free tier, under the proxy's raw wire ids.
+ * Free route: the free tier under the backend's raw wire ids.
  *
- * These are exactly the `opencode/` entries `opencode models` reports with the
- * Zen key absent — the same list the CLI shows — which is also where the card's
- * refresh reads its candidates (see ./free-listing.ts). Context windows come
- * from opencode's catalog (`limit.context`).
- *
- * The set used to be derived by filtering the local backend's provider config
- * by `cost`, which disagreed with the CLI: that view is credentialed, so it
- * carried region-blocked entries (`cat-jam-free`,
- * `muse-spark-1.3-contributor-free`) and lacked free models it does not list at
- * all (`beam-free`, `deepseek-v4.1-flash-free`, `glm-5.3-flash-free`,
- * `nemotron-3.5-super-vl-free`).
+ * In `service` mode (default) these are the bare ids the Go opencode2api's
+ * `/v1/models` answers (`models.free_only: true` on the companion config makes
+ * that listing exactly the free tier); in `embedded` mode the ids carry the
+ * `opencode/` prefix `opencode models` prints. The card's refresh reads the
+ * same source, so the shipped list and a live refresh agree by construction.
+ * Context windows come from opencode's catalog (`limit.context`); ids the
+ * upstream has retired drop out on the first live refresh.
  */
 export const FREE_DEFAULT_MODELS: readonly RouteModel[] = [
-  { id: 'opencode/beam-free', name: label('OpenCode Free', 'opencode/beam-free'), contextWindow: 1_048_576 },
-  { id: 'opencode/big-pickle', name: label('OpenCode Free', 'opencode/big-pickle'), contextWindow: 200_000 },
-  { id: 'opencode/deepseek-v4.1-flash-free', name: label('OpenCode Free', 'opencode/deepseek-v4.1-flash-free'), contextWindow: 200_000 },
-  { id: 'opencode/glm-5.3-flash-free', name: label('OpenCode Free', 'opencode/glm-5.3-flash-free'), contextWindow: 200_000 },
-  { id: 'opencode/longcat-2.5-preview-free', name: label('OpenCode Free', 'opencode/longcat-2.5-preview-free'), contextWindow: 1_000_000 },
-  { id: 'opencode/mimo-v2.6-flash-free', name: label('OpenCode Free', 'opencode/mimo-v2.6-flash-free'), contextWindow: 200_000 },
-  { id: 'opencode/nemotron-3-ultra-free', name: label('OpenCode Free', 'opencode/nemotron-3-ultra-free'), contextWindow: 1_000_000 },
-  { id: 'opencode/nemotron-3.5-lightning-free', name: label('OpenCode Free', 'opencode/nemotron-3.5-lightning-free'), contextWindow: 262_144 },
-  { id: 'opencode/nemotron-3.5-super-vl-free', name: label('OpenCode Free', 'opencode/nemotron-3.5-super-vl-free'), contextWindow: 1_048_576 },
-  { id: 'opencode/space-bunny-free', name: label('OpenCode Free', 'opencode/space-bunny-free'), contextWindow: 1_048_576 },
+  { id: 'beam-free', name: label('OpenCode Free', 'beam-free'), contextWindow: 1_048_576 },
+  { id: 'big-pickle', name: label('OpenCode Free', 'big-pickle'), contextWindow: 200_000 },
+  { id: 'deepseek-v4.1-flash-free', name: label('OpenCode Free', 'deepseek-v4.1-flash-free'), contextWindow: 200_000 },
+  { id: 'flint-40b-free', name: label('OpenCode Free', 'flint-40b-free'), contextWindow: 200_000 },
+  { id: 'glm-5.3-flash-free', name: label('OpenCode Free', 'glm-5.3-flash-free'), contextWindow: 200_000 },
+  { id: 'mimo-v2.6-flash-free', name: label('OpenCode Free', 'mimo-v2.6-flash-free'), contextWindow: 200_000 },
+  { id: 'nemotron-3.5-lightning-free', name: label('OpenCode Free', 'nemotron-3.5-lightning-free'), contextWindow: 262_144 },
+  { id: 'nemotron-3.5-super-vl-free', name: label('OpenCode Free', 'nemotron-3.5-super-vl-free'), contextWindow: 1_048_576 },
 ]

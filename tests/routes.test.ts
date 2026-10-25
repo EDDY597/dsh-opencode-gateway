@@ -182,7 +182,7 @@ describe('route profiles', () => {
     const profileOn = freeProfile(on.free, ['opencode/extra-model'])
     const models = profileOn.piProvider?.getModels?.() ?? []
     expect(models.some(model => model.id === 'opencode/extra-model')).toBe(true)
-    expect(models.some(model => model.id === 'opencode/big-pickle')).toBe(true)
+    expect(models.some(model => model.id === 'big-pickle')).toBe(true)
   })
 
   it('free profile: explicit models override everything', () => {
