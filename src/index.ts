@@ -133,6 +133,23 @@ export function apply(ctx: Context, config: ConfigShape): void {
   let freeRuntime: FreeRuntime | undefined
   let freeStructuralFacts: string | undefined
 
+  /**
+   * Free-route retry budget.
+   *
+   * The route used to be decided once, at load: `buildFreeRuntime()` assigns
+   * `freeRuntime` before the asynchronous start, so its "already built" guard made every
+   * later attempt a no-op -- a harness that loaded before the companion gateway had its
+   * service on 18080 was stuck without free models for the whole session, and the 60s
+   * listing poll could not bring it back (it only refreshes model ids).
+   *
+   * Rebuilding needs `freeRuntime` to be cleared first, which is what the retry below
+   * does. Backoff is short at first because the usual cause is simply "the service is
+   * still starting"; it then stretches out so a permanently broken setup stops costing
+   * anything.
+   */
+  const FREE_ROUTE_RETRY_DELAYS = [5_000, 15_000, 30_000, 60_000, 120_000, 300_000]
+  let freeRouteRetry = 0
+
   const structuralFactsOf = (free: ResolvedConfig['free']): string => JSON.stringify({
     mode: free.mode,
     serviceUrl: free.serviceUrl,
@@ -214,14 +231,17 @@ export function apply(ctx: Context, config: ConfigShape): void {
             if (freeRuntime !== runtime) return
             runtime.server = started
             runtime.serverReady = true
+            freeRouteRetry = 0
             ensure()
           }, (error) => {
             ctx.logger?.error?.(`opencode-gateway: free route unavailable, loopback listener failed: ${error?.message ?? error}`)
             ensure()
+            scheduleFreeRouteRetry(runtime)
           })
         })().catch((error: any) => {
           ctx.logger?.error?.(`opencode-gateway: free route unavailable, service start failed: ${error?.message ?? error}`)
           ensure()
+          scheduleFreeRouteRetry(runtime)
         })
       } else {
         const zenApiKey = process.env[free.zenApiKeyEnv] ?? readLocalOpencodeKey()
@@ -263,6 +283,36 @@ export function apply(ctx: Context, config: ConfigShape): void {
       freeRuntime = undefined
     }
   }
+
+  /**
+   * Rebuild a free route whose start failed, with backoff.
+   *
+   * `buildFreeRuntime()` treats an assigned `freeRuntime` as "already built", so the
+   * failed runtime has to be cleared before the rebuild or the retry is a no-op. It is
+   * only cleared when it is still the same object the failure came from: a settings
+   * change meanwhile owns the route and must not be stomped on.
+   */
+  const scheduleFreeRouteRetry = (failed: FreeRuntime): void => {
+    if (freeRuntime !== failed) return
+    if (freeRouteRetry >= FREE_ROUTE_RETRY_DELAYS.length) {
+      ctx.logger?.warn?.(
+        'opencode-gateway: giving up on the free route for this session after'
+        + ` ${FREE_ROUTE_RETRY_DELAYS.length} retries; restart the harness once the service is reachable`,
+      )
+      return
+    }
+    const delay = FREE_ROUTE_RETRY_DELAYS[freeRouteRetry]
+    freeRouteRetry += 1
+    const timer = setTimeout(() => {
+      if (freeRuntime !== failed) return
+      ctx.logger?.info?.(`opencode-gateway: retrying the free route (attempt ${freeRouteRetry})`)
+      freeRuntime = undefined
+      buildFreeRuntime()
+      ensure()
+    }, delay)
+    timer.unref?.()
+  }
+
   buildFreeRuntime()
 
   // --- discovery facts ----------------------------------------------------
