@@ -7,7 +7,7 @@ A DeepSeek Harness (DSH) plugin that wires the local opencode ecosystem into DSH
 | Route | Endpoint | What it carries |
 | --- | --- | --- |
 | `opencode-gateway` | `http://127.0.0.1:8787/v1` (the local [opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) gateway) | Everything the gateway aggregates: the OpenCode Go subscription (reading the machine's local opencode login state), OpenCode Zen, and any custom upstreams in `gateway.config.json` |
-| `opencode-free` | in-process loopback proxy (default `http://127.0.0.1:10102/v1`) | The Zen free tier via the companion gateway's **Go [opencode2api](https://github.com/jasonxu114514/opencode2api) service** (default `http://127.0.0.1:18080`) — full client fingerprinting, egress rotation, anonymous lane; `mode: "embedded"` falls back to the inlined opencode2api port driving the machine's own `opencode serve` |
+| `opencode-free` | in-process loopback proxy (default `http://127.0.0.1:10102/v1`) | The Zen free tier via the companion gateway's **`oc2api` service** (default `http://127.0.0.1:18090`, `lanes.oc2api.port` in `gateway.config.json`) — uTLS client fingerprinting, egress rotation; `mode: "embedded"` falls back to the inlined opencode2api port driving the machine's own `opencode serve` |
 
 By design this plugin ships **no usage panel**; quota display lives in the gateway's `/api/usage` and the tray.
 
@@ -15,13 +15,13 @@ By design this plugin ships **no usage panel**; quota display lives in the gatew
 
 - **Curated OpenCode Go registry** — the default menu follows the user's ZCode list (15 models); display names, context windows, effort vocabularies, vision flags and a refusal list for 41 entries, measured request-by-request and ported from [AIMFllyYS/dsh-protocom-api](https://github.com/AIMFllyYS/dsh-protocom-api) (MIT) — including the measured quirks (Go spells its disable word `off` and refuses `none`; grok/muse serve `/responses` only, which the gateway converts transparently).
 - **Live model discovery** (soft-failing) — both routes mount immediately with configured/seed menus and upgrade in place once the endpoint's listing answers; a failed read keeps the current facts serving.
-- **Managed backend lifecycle** — in `service` mode (default) the free route spawns the companion gateway's `bin\opencode2api.exe` when port 18080 has no listener and reclaims only a process **it spawned**; a service already running (e.g. started by the gateway's own start scripts) is reused untouched. `embedded` mode does the same for `opencode serve`.
+- **Service lifecycle** — in `service` mode (default) the free route talks to the oc2api service the companion gateway already owns: the gateway's `lanes.oc2api` block starts and stops it, so the plugin spawns nothing and only needs the endpoint + key. `embedded` mode manages `opencode serve` itself.
 - **In-process loopback bridge** — pi-ai's transport needs a real URL, so the plugin exposes the free backend's OpenAI surface on an HTTP listener bound to loopback only (default 10102, configurable); in `service` mode it is an authenticated passthrough to the Go service, in `embedded` mode it wraps the LocalProxy functions. The listener never holds the host's event loop, so headless tasks still exit.
 
 ## System requirements
 
 - **DSH ≥ 0.1.7-rc.2 and < 0.3.0-0** (measured peer range); verified on **0.2.0-rc.2**
-- The free tier (default `service` mode) needs the companion gateway checkout next to this plugin — it resolves `..\opencode-api-plugin\bin\opencode2api.exe` + `bin\config.json` automatically (server key included), and spawns the service when absent. A custom location or an already-running service works via `free.serviceUrl` / `free.serviceExePath` / `OPENCODE2API_SERVER_KEY`
+- The free tier (default `service` mode) needs the companion gateway running with its `lanes.oc2api` block enabled — that block owns `bin\oc2api.exe` and the port the plugin talks to (default `18090`). The plugin does not start it: set `free.serviceUrl` to whatever `lanes.oc2api.port` is, and `OPENCODE2API_SERVER_KEY` to the same value as `lanes.oc2api.apiKey`.
 - The free tier in `embedded` mode needs the opencode CLI installed; `opencode auth login` is recommended (better model list and limits, anonymous works too)
 - The gateway route needs the companion gateway [EDDY597/opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) running (`start-gateway.cmd`, `start-tray-hidden.vbs` or the tray)
 - The gateway route also requires the gateway's `opencode-go` upstream to be **enabled with `prefix: "go"`** (the gateway's example config does this) and `OPENCODE_GATEWAY_KEY=<gateway token>` in `~/.dsh/.env`. Missing either one makes the Go card's refresh report "missing credential / HTTP 401 / empty listing" explicitly instead of failing silently.
@@ -70,9 +70,9 @@ The plugin installs no settings UI; configuration lives in the composition layer
     free:
       provider: opencode-free
       mode: service            # "embedded" drives local opencode serve instead
-      serviceUrl: http://127.0.0.1:18080
+      serviceUrl: http://127.0.0.1:18090   # = gateway.config.json lanes.oc2api.port
       serviceApiKeyEnv: OPENCODE2API_SERVER_KEY
-      manageService: true      # spawn the companion bin/opencode2api.exe when absent
+      manageService: false     # the gateway owns bin\oc2api.exe; nothing to spawn here
       proxyPort: 10102
       # embedded-mode only:
       # serverUrl: http://127.0.0.1:10001
@@ -81,6 +81,36 @@ The plugin installs no settings UI; configuration lives in the composition layer
       # disableTools: true
       # internalAllowedTools: [webfetch, bash, websearch]
 ```
+
+## Upgrading from the 18080 setup
+
+Until recently the free route defaulted to `http://127.0.0.1:18080` with `manageService: true`. Both are wrong for tool calling, and the spawn target no longer exists:
+
+| Symptom | Cause |
+| --- | --- |
+| Free models answer text but **never call tools** | 18080 is the gateway's `src/cli-server.ts` shim — a buffered adapter that waits for the whole reply, rebuilds it as text and keeps only text parts, so every `tool_calls` is dropped. `oc2api` (:18090) forwards tools and streaming verbatim. Measured 2026-10-30 with one identical request: gateway `free/big-pickle` → `tool_calls`, `:18090` directly → `tool_calls`, `:18080` → none. |
+| Free route burns its retries, then "gives up for this session" | `manageService: true` makes the plugin look for `bin\opencode2api.exe`, which no longer ships; a slow `:18090` turns into a missing executable, not a slow start. |
+
+**No config change is needed if you left `free` at defaults**: the current defaults already point at `:18090` with `manageService: false`.
+
+If your `cordis.patch.yml` spells the old values out explicitly, change them:
+
+```yaml
+    free:
+      serviceUrl: http://127.0.0.1:18090   # was http://127.0.0.1:18080
+      manageService: false                 # was true
+```
+
+And keep the key in step with the gateway:
+
+```dotenv
+# ~/.dsh/.env — must equal gateway.config.json  lanes.oc2api.apiKey
+OPENCODE2API_SERVER_KEY=df8a7e…your-gateway-key
+```
+
+If your gateway runs oc2api on a non-default port, set `free.serviceUrl` to that port — it is the only free-side setting that names it.
+
+Restart DSH afterwards (the plugin reads this config at load). Then pick a free model and ask it to read a file; seeing a tool call means the free route is on the direct path.
 
 ## Model manager page
 
@@ -101,7 +131,7 @@ Precedence: saved settings `models` (even an empty array) > composition `cordis.
 | Variable | Meaning |
 | --- | --- |
 | `OPENCODE_GATEWAY_KEY` | The gateway's Bearer token; **any non-empty value works while the gateway runs without a token**. A refresh without it reports "no credential resolved…" directly; a chat request fails before network I/O with `MISSING_CREDENTIAL` |
-| `OPENCODE2API_SERVER_KEY` | The Go opencode2api service's server key (free route, `service` mode); falls back to the companion gateway's `bin/config.json` `server_keys[0]` |
+| `OPENCODE2API_SERVER_KEY` | The oc2api service's key (free route, `service` mode) — must equal the gateway's `lanes.oc2api.apiKey`. Falls back to the companion gateway's `bin/config.json` `server_keys[0]`, which only works when the gateway checkout sits next to this plugin and its key matches |
 | `OPENCODE_ZEN_API_KEY` | (`embedded` mode) Passed to the backend as `OPENCODE_API_KEY` to unlock paid models; falls back to the local opencode login state (v0.1 reads the process environment only, not the credentials seam) |
 
 ### `models[]` entries

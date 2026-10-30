@@ -7,7 +7,7 @@ DeepSeek Harness（DSH）插件：把本机 opencode 生态接进 DSH 的模型�
 | route | 端点 | 承载内容 |
 | --- | --- | --- |
 | `opencode-gateway` | `http://127.0.0.1:8787/v1`（本机 [opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) 网关） | 网关聚合的一切：OpenCode Go 订阅（读本地 opencode 登录态）、OpenCode Zen、以及 gateway.config.json 里的任意自定义上游 |
-| `opencode-free` | 插件进程内环回代理（默认 `http://127.0.0.1:10102/v1`） | Zen 免费档，经配套网关的 **Go 版 [opencode2api](https://github.com/jasonxu114514/opencode2api) 服务**（默认 `http://127.0.0.1:18080`）——完整客户端指纹、出口轮换、匿名通道；`mode: "embedded"` 回退到内联移植驱动本机 `opencode serve` |
+| `opencode-free` | 插件进程内环回代理（默认 `http://127.0.0.1:10102/v1`） | Zen 免费档，经配套网关的 **`oc2api` 服务**（默认 `http://127.0.0.1:18090`，即 `gateway.config.json` 的 `lanes.oc2api.port`）——uTLS 客户端指纹、出口轮换；`mode: "embedded"` 回退到内联移植驱动本机 `opencode serve` |
 
 按设计本插件**不带用量面板**；额度显示由网关的 `/api/usage` 与托盘承担。
 
@@ -15,13 +15,13 @@ DeepSeek Harness（DSH）插件：把本机 opencode 生态接进 DSH 的模型�
 
 - **OpenCode Go 精修名录**：默认菜单对齐 ZCode 的 15 个模型；41 个条目的展示名、上下文窗口、思考强度词表、视觉标记与拒用名单实测值移植自 [AIMFllyYS/dsh-protocom-api](https://github.com/AIMFllyYS/dsh-protocom-api)（MIT）——包括 Go 用 `off` 拒 `none`、Grok/Muse 只认 `/responses`（网关侧已自动转换）这类实测坑。
 - **实时模型发现**（软失败）：两条路由先以配置/种子菜单挂载，端点 listing 回答后原地升级；发现失败静默保持现状，对话不中断。
-- **后端生命周期托管**：`service` 模式（默认）下，18080 端口没有监听时自动 spawn 配套网关的 `bin\opencode2api.exe`，插件卸载时只回收**自己 spawn 的**进程；已在运行的实例（比如网关启动脚本拉起的）原样复用。`embedded` 模式对 `opencode serve` 亦然。
+- **服务生命周期**：`service` 模式（默认）下，免费路由直连配套网关**已经在托管**的 oc2api 服务——网关的 `lanes.oc2api` 块负责启动与停止，插件自己不 spawn 任何东西，只需要「地址 + key」两样。`embedded` 模式下插件自行管理 `opencode serve`。
 - **进程内环回桥**：pi-ai 传输需要真实 URL，插件把免费档后端的 OpenAI 表面包成一个仅绑定回环地址的 HTTP 监听（默认 10102，可配）；`service` 模式下它是对 Go 服务的带鉴权透传，`embedded` 模式下包装 LocalProxy 函数。环回服务永不驻留事件循环，headless 任务照常退出。
 
 ## 系统要求
 
 - **DSH ≥ 0.1.7-rc.2 且 < 0.3.0-0**（peer 实测范围），已在 **0.2.0-rc.2** 验证
-- 免费档（默认 `service` 模式）需要配套网关的检出与本插件同级——自动解析 `..\opencode-api-plugin\bin\opencode2api.exe` + `bin\config.json`（server key 一并读出），服务缺席时自动拉起；自定义位置或已运行的服务用 `free.serviceUrl` / `free.serviceExePath` / `OPENCODE2API_SERVER_KEY` 指定
+- 免费档（默认 `service` 模式）需要配套网关**已启用 `lanes.oc2api`**——那块负责 `bin\oc2api.exe` 与端口（默认 `18090`），插件不负责拉起。把 `free.serviceUrl` 设成 `lanes.oc2api.port`，把 `OPENCODE2API_SERVER_KEY` 设成 `lanes.oc2api.apiKey` 的同一个值即可
 - 免费档 `embedded` 模式需要本机装有 opencode CLI，建议先 `opencode auth login`（免费账号模型列表与限额更好，匿名也能用）
 - 网关路由需要配套网关 [EDDY597/opencode-api-plugin](https://github.com/EDDY597/opencode-api-plugin) 在运行（`start-gateway.cmd`、`start-tray-hidden.vbs` 或托盘）
 - 网关路由还要求网关侧 `opencode-go` upstream **已启用且 `prefix` 为 `go`**（网关示例配置已如此），并在 `~/.dsh/.env` 设置 `OPENCODE_GATEWAY_KEY=<网关 token>`。缺任何一项，Go 卡的刷新会明确报「缺凭据 / HTTP 401 / 空列表」，而不是静默失败。
@@ -70,9 +70,9 @@ pnpm dsh plugin --profile web add "D:/Agent/dsh-opencode-gateway"
     free:
       provider: opencode-free
       mode: service                       # "embedded" 改为驱动本机 opencode serve
-      serviceUrl: http://127.0.0.1:18080  # Go opencode2api 服务
+      serviceUrl: http://127.0.0.1:18090  # = gateway.config.json 的 lanes.oc2api.port
       serviceApiKeyEnv: OPENCODE2API_SERVER_KEY
-      manageService: true                 # 服务缺席时自动拉起配套 bin/opencode2api.exe
+      manageService: false                # 网关托管 bin\oc2api.exe，这里不需要 spawn
       proxyPort: 10102                    # 环回监听端口
       # 以下仅 embedded 模式：
       # serverUrl: http://127.0.0.1:10001 # opencode 后端
@@ -81,6 +81,36 @@ pnpm dsh plugin --profile web add "D:/Agent/dsh-opencode-gateway"
       # disableTools: true                # 免费档必需
       # internalAllowedTools: [webfetch, bash, websearch]
 ```
+
+## 从 18080 那套配置升级
+
+免费路由以前默认是 `http://127.0.0.1:18080` + `manageService: true`。这两项对工具调用都是错的，而且 spawn 目标已经不存在了：
+
+| 现象 | 原因 |
+| --- | --- |
+| 免费模型能出文字，但**从不调用工具** | 18080 是网关的 `src/cli-server.ts` 垫片——缓冲式适配器，等整段回复到齐再拼成纯文本、只保留 text 段，`tool_calls` 全被丢弃。`oc2api`（:18090）是原样透传的。2026-10-30 实测同一个带工具的请求：网关 `free/big-pickle` → 有 `tool_calls`，直连 `:18090` → 有，走 `:18080` → 没有。 |
+| 免费路由把重试用尽，然后「本会话放弃」 | `manageService: true` 会让插件去找 `bin\opencode2api.exe`，那个文件已经不再随仓库提供；`:18090` 只要答得慢一点，就被当成「可执行文件缺失」。 |
+
+**如果你没在配置里显式写过 `free`，不用改任何东西**：当前默认值已经指向 `:18090` 且 `manageService: false`。
+
+如果你的 `cordis.patch.yml` 里把旧值写死了，改成：
+
+```yaml
+    free:
+      serviceUrl: http://127.0.0.1:18090   # 原来 http://127.0.0.1:18080
+      manageService: false                 # 原来 true
+```
+
+再把 key 和网关对齐：
+
+```dotenv
+# ~/.dsh/.env —— 必须等于 gateway.config.json 里的 lanes.oc2api.apiKey
+OPENCODE2API_SERVER_KEY=df8a7e…你的网关 key
+```
+
+如果网关的 oc2api 跑在非默认端口，把 `free.serviceUrl` 改成那个端口即可——**它是免费侧唯一写端口的地方**。
+
+改完重启 DSH（这份配置在加载时读取）。然后选个免费模型让它读一个文件，能看到工具调用就说明已经走上直连路径了。
 
 ## 模型管理页
 
@@ -101,7 +131,7 @@ DSH 设置里会出现 **OpenCode 网关** 一节（插件 v0.2.0 起）：两�
 | 变量 | 说明 |
 | --- | --- |
 | `OPENCODE_GATEWAY_KEY` | 网关 Bearer token；**网关未设 token 时任意非空值即可**。刷新时缺这个变量会直接报「no credential resolved…」，聊天则在发请求前报 `MISSING_CREDENTIAL` |
-| `OPENCODE2API_SERVER_KEY` | Go opencode2api 服务的 server key（免费路由 `service` 模式）；未设时回退读配套网关 `bin/config.json` 的 `server_keys[0]` |
+| `OPENCODE2API_SERVER_KEY` | oc2api 服务的 key（免费路由 `service` 模式），必须等于网关的 `lanes.oc2api.apiKey`；未设时回退读配套网关 `bin/config.json` 的 `server_keys[0]`——只在网关检出与本插件同级、且两者 key 一致时才有效 |
 | `OPENCODE_ZEN_API_KEY` | （`embedded` 模式）透传为后端 `OPENCODE_API_KEY` 解锁付费模型；未设时回退读本地 opencode 登录态（v0.1 只读进程环境，不走凭据服务） |
 
 ### `models[]` 条目
