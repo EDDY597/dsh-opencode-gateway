@@ -13,9 +13,12 @@ describe('resolveConfig defaults', () => {
     expect(resolved.gateway.retryPolicy).toMatchObject({ mode: 'normal', maxRetries: 2 })
     expect(resolved.free.provider).toBe('opencode-free')
     expect(resolved.free.mode).toBe('service')
-    expect(resolved.free.serviceUrl).toBe('http://127.0.0.1:18080')
+    // oc2api directly (gateway.config.json lanes.oc2api.port), not the 18080 shim:
+    // the shim rebuilds replies as text and drops tool_calls.
+    expect(resolved.free.serviceUrl).toBe('http://127.0.0.1:18090')
     expect(resolved.free.serviceApiKeyEnv).toBe('OPENCODE2API_SERVER_KEY')
-    expect(resolved.free.manageService).toBe(true)
+    // The gateway owns the oc2api process; there is no binary for the plugin to spawn.
+    expect(resolved.free.manageService).toBe(false)
     expect(resolved.free.serverUrl).toBe('http://127.0.0.1:10001')
     expect(resolved.free.proxyPort).toBe(10102)
     expect(resolved.free.internalAllowedTools).toEqual(['webfetch', 'bash', 'websearch'])

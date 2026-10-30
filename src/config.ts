@@ -225,9 +225,25 @@ const DEFAULT_FREE = {
   // client detection in Oct 2026); 'embedded' drives the machine's `opencode
   // serve` through the vendored in-process proxy.
   mode: 'service' as FreeMode,
-  serviceUrl: 'http://127.0.0.1:18080',
+  // oc2api directly, not the gateway: `go/` keeps using the gateway route while the
+  // free route stays independent of it (one direct call, one hop fewer to lose).
+  //
+  // 18090 is the companion gateway's `lanes.oc2api.port` (gateway.config.json). Point
+  // the two at each other, and this URL is the *only* free-side setting that has to
+  // move: the key travels in `serviceApiKeyEnv`, so no other setting names this port.
+  //
+  // Why not the old 18080? That is the gateway's `src/cli-server.ts` shim, a buffered
+  // adapter: it waits for the whole reply and rebuilds it as text, dropping
+  // `tool_calls`. Free models DO support tools — measured 2026-10-30, same request:
+  // `free/big-pickle` through the gateway -> tool_calls, oc2api :18090 directly ->
+  // tool_calls, :18080 -> none. oc2api forwards both streaming and tools verbatim.
+  serviceUrl: 'http://127.0.0.1:18090',
   serviceApiKeyEnv: 'OPENCODE2API_SERVER_KEY',
-  manageService: true,
+  // Nothing to spawn: the gateway owns the oc2api process (its `lanes` block starts
+  // and stops it). Leaving this true made the plugin look for `bin\opencode2api.exe`
+  // — a file that no longer exists — whenever 18090 was not answering yet, and the
+  // free route then burned its retries on an executable that was never there.
+  manageService: false,
   // Empty means: resolve the companion gateway's bin\ next to this plugin.
   serviceExePath: '',
   serviceConfigPath: '',
