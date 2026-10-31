@@ -39,7 +39,8 @@
     }
   },
   "scripts": {
-    "build": "tsdown && tsc -b",
+    "build:check-node": "node -e \"const v=process.versions.node.split('.').map(Number);const [maj,min]=v;const ok=maj>24||(maj===24&&min>=11)||(maj===22&&min>=18);if(!ok){console.error(`\\n[build] Node ${process.versions.node} at ${process.execPath} cannot run this build.\\n[build] tsdown needs ^22.18.0 || >=24.11.0; older Node is missing node:util.styleText,\\n[build] which fails as a confusing SyntaxError somewhere inside rolldown.\\n[build] Put a newer Node first on PATH, or run: npx -y node@24 $(which pnpm) run build\\n`);process.exit(1)}\"",
+    "build": "pnpm run build:check-node && tsdown && tsc -b",
     "check:consistency": "pnpm run build && git diff --exit-code",
     "test": "vitest run",
     "verify": "pnpm run test && pnpm run check:consistency"
