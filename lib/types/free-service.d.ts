@@ -52,8 +52,12 @@ export declare function readServiceKeyFromConfig(configPath: string): string | u
 /**
  * Probe the service's unauthenticated health endpoint.
  *
- * `GET /healthz` answers 200 without a key, which makes it the one request
- * that can decide "is anything listening" before credentials exist.
+ * The Go service itself answers `GET /health` (measured on oc2api 18090:
+ * `/healthz` and `/readyz` are 404, `/health` and `/` are 200), while the
+ * gateway's cli-server shim answers `/healthz`. Both are unauthenticated, so
+ * either one decides "is anything listening" before credentials exist; probing
+ * only one path reads the other build's 404 as "not listening" and the free
+ * route then never starts.
  */
 export declare function serviceHealthy(serviceUrl: string, timeoutMs?: number): Promise<boolean>;
 /** How one spawned service process is tracked for disposal. */
